@@ -316,8 +316,8 @@ class SiteInfo {
 }
 
 class SalaryInfo {
-  final double? basicSalary;
-  final double? dailyWage;
+  final String? basicSalary;
+  final String? dailyWage;
 
   SalaryInfo({
     this.basicSalary,
@@ -325,10 +325,10 @@ class SalaryInfo {
   });
 
   // Check if employee has basic salary
-  bool get hasBasicSalary => basicSalary != null && basicSalary! > 0;
+  bool get hasBasicSalary => basicSalary != null ;
 
   // Check if employee has daily wage
-  bool get hasDailyWage => dailyWage != null && dailyWage! > 0;
+  bool get hasDailyWage => dailyWage != null ;
 
   // Get primary salary type
   String get salaryType {
@@ -338,9 +338,9 @@ class SalaryInfo {
   }
 
   // Get primary salary amount
-  double get primarySalaryAmount {
+  String get primarySalaryAmount {
     if (hasBasicSalary) return basicSalary!;
     if (hasDailyWage) return dailyWage!;
-    return 0.0;
+    return "0.0";
   }
 }

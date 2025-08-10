@@ -102,7 +102,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   'Check In',
                   Icons.login,
                   AppTheme.successColor,
-                  permissions?.canCheckin == true
+                  permissions?.canCheckIn == true
                       ? () => Navigator.pushNamed(context, AppRoutes.checkIn)
                       : null,
                 ),
@@ -113,7 +113,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   'Check Out',
                   Icons.logout,
                   Colors.orange,
-                  permissions?.canCheckout == true
+                  permissions?.canCheckOut == true
                       ? () => Navigator.pushNamed(context, AppRoutes.checkOut)
                       : null,
                 ),

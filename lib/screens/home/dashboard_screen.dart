@@ -594,7 +594,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         icon: Icons.login,
                         label: 'Check In',
                         color: AppTheme.successColor,
-                        onTap: permissions?.canCheckin == true
+                        onTap: permissions?.canCheckIn == true
                             ? () => Navigator.pushNamed(context, AppRoutes.checkIn)
                             : null,
                       ),
@@ -605,7 +605,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         icon: Icons.logout,
                         label: 'Check Out',
                         color: Colors.orange,
-                        onTap: permissions?.canCheckout == true
+                        onTap: permissions?.canCheckOut == true
                             ? () => Navigator.pushNamed(context, AppRoutes.checkOut)
                             : null,
                       ),
@@ -620,7 +620,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         icon: Icons.add_task,
                         label: 'Create Task',
                         color: AppTheme.primaryColor,
-                        onTap: permissions?.canCreateTask == true
+                        onTap: permissions?.canCreateTasks == true
                             ? () => Navigator.pushNamed(context, AppRoutes.createTask)
                             : null,
                       ),

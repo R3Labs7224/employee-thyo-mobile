@@ -655,7 +655,7 @@ class ApiService {
         'method': method,
         'endpoint': endpoint,
         'status_code': response.statusCode,
-        'content_length': response.body.length,
+        'content': response.body,
         'content_type': response.headers['content-type'],
         'server': response.headers['server'],
       });
@@ -676,7 +676,7 @@ class ApiService {
         _debugLog('✅ SUCCESS RESPONSE', 'Request completed successfully', {
           'status_code': response.statusCode,
           'success_flag': jsonResponse['success'],
-          'data_type': jsonResponse['data']?.runtimeType.toString(),
+          'data': jsonResponse['data']?.toString(),
           'message': jsonResponse['message'],
         });
 

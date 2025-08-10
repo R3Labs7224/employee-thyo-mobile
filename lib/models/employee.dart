@@ -14,8 +14,8 @@ class Employee {
   final String siteAddress;
   final double siteLatitude;
   final double siteLongitude;
-  final double? basicSalary;
-  final double? dailyWage;
+  final String? basicSalary;
+  final String? dailyWage;
   final String? joiningDate;
 
   Employee({
@@ -52,8 +52,8 @@ class Employee {
       siteAddress: json['site_address'],
       siteLatitude: json['site_latitude'].toDouble(),
       siteLongitude: json['site_longitude'].toDouble(),
-      basicSalary: json['basic_salary']?.toDouble(),
-      dailyWage: json['daily_wage']?.toDouble(),
+      basicSalary: json['basic_salary'],
+      dailyWage: json['daily_wage'],
       joiningDate: json['joining_date'],
     );
   }
@@ -74,7 +74,7 @@ class Employee {
       'site_latitude': siteLatitude,
       'site_longitude': siteLongitude,
       'basic_salary': basicSalary,
-      'daily_wage': dailyWage,
+      'daily_wage': dailyWage??"0",
       'joining_date': joiningDate,
     };
   }
@@ -106,50 +106,73 @@ class LoginResponse {
       todayAttendance: json['today_attendance'] != null 
           ? Attendance.fromJson(json['today_attendance'])
           : null,
-      monthlyStats: MonthlyStats.fromJson(json['monthly_stats']),
-      pendingPettyCash: json['pending_petty_cash'].toDouble(),
-      activeTasks: json['active_tasks'],
-      permissions: Permissions.fromJson(json['permissions']),
+      monthlyStats: MonthlyStats.fromJson(json['monthly_stats'] ?? {}),
+      pendingPettyCash: (json['pending_petty_cash'] ?? 0.0).toDouble(),
+      activeTasks: json['active_tasks'] ?? 0,
+      permissions: Permissions.fromJson(json['permissions'] ?? {}),
     );
   }
 }
 
 class MonthlyStats {
   final int totalDays;
-  final int approvedDays;
-  final double totalHours;
+  final int presentDays;
+  final int absentDays;
+  final int lateDays;
+  final double totalOvertime;
+  final double attendancePercentage;
 
   MonthlyStats({
     required this.totalDays,
-    required this.approvedDays,
-    required this.totalHours,
+    required this.presentDays,
+    required this.absentDays,
+    required this.lateDays,
+    required this.totalOvertime,
+    required this.attendancePercentage,
   });
 
   factory MonthlyStats.fromJson(Map<String, dynamic> json) {
     return MonthlyStats(
-      totalDays: json['total_days'],
-      approvedDays: json['approved_days'],
-      totalHours: json['total_hours'].toDouble(),
+      totalDays: json['total_days'] ?? 0,
+      presentDays: json['present_days'] ?? 0,
+      absentDays: json['absent_days'] ?? 0,
+      lateDays: json['late_days'] ?? 0,
+      totalOvertime: (json['total_overtime'] ?? 0.0).toDouble(),
+      attendancePercentage: (json['attendance_percentage'] ?? 0.0).toDouble(),
     );
   }
 }
 
 class Permissions {
-  final bool canCheckin;
-  final bool canCheckout;
-  final bool canCreateTask;
+  final bool canCheckIn;
+  final bool canCheckOut;
+  final bool canViewAttendance;
+  final bool canCreateTasks;
+  final bool canRequestPettyCash;
+  final bool canViewSalary;
+  final bool canEditProfile;
 
   Permissions({
-    required this.canCheckin,
-    required this.canCheckout,
-    required this.canCreateTask,
+    required this.canCheckIn,
+    required this.canCheckOut,
+    required this.canViewAttendance,
+    required this.canCreateTasks,
+    required this.canRequestPettyCash,
+    required this.canViewSalary,
+    required this.canEditProfile,
   });
 
   factory Permissions.fromJson(Map<String, dynamic> json) {
     return Permissions(
-      canCheckin: json['can_checkin'],
-      canCheckout: json['can_checkout'],
-      canCreateTask: json['can_create_task'],
+      canCheckIn: json['can_check_in'] ?? false,
+      canCheckOut: json['can_check_out'] ?? false,
+      canViewAttendance: json['can_view_attendance'] ?? false,
+      canCreateTasks: json['can_create_tasks'] ?? false,
+      canRequestPettyCash: json['can_request_petty_cash'] ?? false,
+      canViewSalary: json['can_view_salary'] ?? false,
+      canEditProfile: json['can_edit_profile'] ?? false,
     );
   }
 }
+
+

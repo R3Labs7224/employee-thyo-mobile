@@ -62,6 +62,8 @@ class AuthProvider with ChangeNotifier {
         _employee = response.data!.employee;
         _isAuthenticated = true;
 
+        print("💥 token: $token");
+        print("💥  employee: $employee");
         _apiService.setToken(_token!);
         await _storageService.saveToken(_token!);
         await _storageService.saveEmployeeData(_employee!.toJson());
