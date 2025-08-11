@@ -1,6 +1,10 @@
+// lib/screens/tasks/complete_task_screen.dart
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../services/location_service.dart';
@@ -9,10 +13,9 @@ import '../../config/theme.dart';
 import '../../widgets/common/custom_app_bar.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/loading_widget.dart';
-import '../../utils/validators.dart';
 
 class CompleteTaskScreen extends StatefulWidget {
-  const CompleteTaskScreen({Key? key}) : super(key: key);
+  const CompleteTaskScreen({super.key});
 
   @override
   State<CompleteTaskScreen> createState() => _CompleteTaskScreenState();
@@ -28,63 +31,71 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
 
   Task? _task;
   Position? _currentPosition;
+  File? _completionImage;
   String? _completionImageBase64;
   bool _isLoading = false;
-  bool _locationPermissionGranted = false;
+  String? _error;
 
   late AnimationController _animationController;
-  late Animation<double> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _slideAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
-    );
-
-    _animationController.forward();
-    
-    // Get task from arguments
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final args = ModalRoute.of(context)?.settings.arguments;
-      if (args is Task) {
-        setState(() {
-          _task = args;
-        });
-      }
-    });
-
-    _checkLocationPermission();
+    _initializeScreen();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _notesController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
-  Future<void> _checkLocationPermission() async {
+  Future<void> _initializeScreen() async {
     setState(() {
       _isLoading = true;
+      _error = null;
     });
 
-    final permission = await _locationService.checkLocationPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      final requestResult = await _locationService.requestLocationPermission();
-      _locationPermissionGranted = requestResult != LocationPermission.denied &&
-          requestResult != LocationPermission.deniedForever;
-    } else {
-      _locationPermissionGranted = true;
-    }
+    try {
+      // Get active task
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      _task = taskProvider.activeTask;
 
-    if (_locationPermissionGranted) {
-      await _getCurrentLocation();
+      if (_task == null) {
+        setState(() {
+          _error = 'No active task found. Please create a task first.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Check location permission
+      final hasPermission = await _locationService.checkPermission();
+      if (!hasPermission) {
+        final granted = await _locationService.requestPermission();
+        if (!granted) {
+          setState(() {
+            _error = 'Location permission is required to complete tasks';
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+
+      // Get current location
+      final position = await _locationService.getCurrentPosition();
+      if (position != null) {
+        _currentPosition = position;
+      }
+
+      _animationController.forward();
+    } catch (e) {
+      _error = 'Failed to initialize: ${e.toString()}';
     }
 
     setState(() {
@@ -92,34 +103,47 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
     });
   }
 
-  Future<void> _getCurrentLocation() async {
-    final position = await _locationService.getCurrentPosition();
-    if (position != null) {
-      setState(() {
-        _currentPosition = position;
-      });
+  Future<void> _captureCompletionImage() async {
+    try {
+      final XFile? image = await _cameraService.captureTaskImage();
+      if (image != null) {
+        await _processImage(image);
+      }
+    } catch (e) {
+      _showErrorSnackBar('Failed to capture image: ${e.toString()}');
     }
   }
 
-  Future<void> _captureCompletionImage() async {
-    final image = await _cameraService.captureTaskImage();
-    if (image != null) {
+  Future<void> _processImage(XFile imageFile) async {
+    try {
+      final File file = File(imageFile.path);
+      
+      // Validate image file
+      if (!_cameraService.validateImageFile(file)) {
+        _showErrorSnackBar('Invalid image file. Please select a valid image (max 5MB).');
+        return;
+      }
+
+      // Convert to base64
+      final bytes = await file.readAsBytes();
+      final base64String = base64Encode(bytes);
+
       setState(() {
-        _completionImageBase64 = image;
+        _completionImage = file;
+        _completionImageBase64 = 'data:image/jpeg;base64,$base64String';
       });
+    } catch (e) {
+      _showErrorSnackBar('Failed to process image: ${e.toString()}');
     }
   }
 
   Future<void> _completeTask() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    if (_task == null) {
-      _showErrorDialog('Task information not found');
+    if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    if (_currentPosition == null) {
-      _showErrorDialog('Location is required to complete the task');
+    if (_task == null) {
+      _showErrorSnackBar('No active task found');
       return;
     }
 
@@ -127,20 +151,23 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
       _isLoading = true;
     });
 
-    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      final completionNotes = _notesController.text.trim();
 
-    final success = await taskProvider.completeTask(
-      taskId: _task!.id!,
-      completionNotes: _notesController.text.trim(),
-      latitude: _currentPosition!.latitude,
-      longitude: _currentPosition!.longitude,
-      completionImageBase64: _completionImageBase64,
-    );
+      final success = await taskProvider.completeTask(
+        taskId: _task!.id!,
+        completionNotes: completionNotes.isNotEmpty ? completionNotes : null,
+      );
 
-    if (success) {
-      _showSuccessDialog();
-    } else {
-      _showErrorDialog(taskProvider.error ?? 'Failed to complete task');
+      if (success && mounted) {
+        _showSuccessSnackBar('Task completed successfully!');
+        Navigator.pop(context);
+      } else if (mounted) {
+        _showErrorSnackBar(taskProvider.error ?? 'Failed to complete task');
+      }
+    } catch (e) {
+      _showErrorSnackBar('Failed to complete task: ${e.toString()}');
     }
 
     setState(() {
@@ -148,176 +175,195 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
     });
   }
 
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+  void _showErrorSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Success'),
-        content: const Text('Task completed successfully!'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+  void _showSuccessSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_task == null) {
-      return Scaffold(
-        appBar: const CustomAppBar(title: 'Complete Task'),
-        body: const Center(
-          child: Text('Task not found'),
-        ),
-      );
-    }
-
     return Scaffold(
-      appBar: const CustomAppBar(title: 'Complete Task'),
+      appBar: const CustomAppBar(
+        title: 'Complete Task',
+        showBackButton: true,
+      ),
       body: _isLoading
-          ? const LoadingWidget(message: 'Completing task...')
-          : SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.3),
-                end: Offset.zero,
-              ).animate(_animationController),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildTaskInfoCard(),
-                      const SizedBox(height: 24),
-                      _buildCompletionForm(),
-                      const SizedBox(height: 24),
-                      _buildLocationCard(),
-                      const SizedBox(height: 24),
-                      _buildImageCard(),
-                      const SizedBox(height: 32),
-                      CustomButton(
-                        text: 'Complete Task',
-                        onPressed: _canCompleteTask() ? _completeTask : null,
-                        width: double.infinity,
-                        backgroundColor: AppTheme.successColor,
-                      ),
-                    ],
-                  ),
-                ),
+          ? const LoadingWidget()
+          : _error != null
+              ? _buildErrorWidget()
+              : _buildTaskCompletionForm(),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Task Completion Error',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.red[700],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _initializeScreen,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskCompletionForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTaskInfoCard(),
+            const SizedBox(height: 16),
+            _buildLocationCard(),
+            const SizedBox(height: 16),
+            _buildCompletionNotesCard(),
+            const SizedBox(height: 16),
+            _buildCompletionImageCard(),
+            const SizedBox(height: 32),
+            _buildCompleteButton(),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildTaskInfoCard() {
+    if (_task == null) return const SizedBox();
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.accentColor.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.task,
-                    color: AppTheme.accentColor,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Task Information',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'Review details before completion',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                Icon(Icons.task, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Task Information',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             _buildInfoRow('Title', _task!.title),
-            _buildInfoRow('Description', _task!.description),
-            if (_task!.siteName != null)
-              _buildInfoRow('Site', _task!.siteName!),
-            if (_task!.startTime != null)
-              _buildInfoRow('Started At', _formatDateTime(_task!.startTime!)),
+            if (_task!.description != null && _task!.description!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildInfoRow('Description', _task!.description!),
+            ],
+            const SizedBox(height: 8),
+            _buildInfoRow('Site', _task!.siteName ?? 'Unknown'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Started', _formatDateTime(_task!.startTime)),
+            const SizedBox(height: 8),
+            _buildStatusChip(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCompletionForm() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Completion Details',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 80,
+          child: Text(
+            '$label:',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[700],
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: 'Completion Notes *',
-                hintText: 'Describe what was completed, any issues, etc.',
-                prefixIcon: Icon(Icons.notes),
-              ),
-              validator: Validators.required,
-              maxLines: 4,
-              maxLength: 500,
-            ),
-          ],
+          ),
         ),
+        Expanded(
+          child: Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.orange),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule, size: 16, color: Colors.orange[700]),
+          const SizedBox(width: 4),
+          Text(
+            'Active Task',
+            style: TextStyle(
+              color: Colors.orange[700],
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -325,69 +371,92 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
   Widget _buildLocationCard() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Current Location',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
             Row(
               children: [
-                Icon(
-                  _locationPermissionGranted && _currentPosition != null
-                      ? Icons.location_on
-                      : Icons.location_off,
-                  color: _locationPermissionGranted && _currentPosition != null
-                      ? AppTheme.successColor
-                      : Colors.red,
-                  size: 32,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'GPS Location',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _getLocationStatusText(),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (_currentPosition != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Lat: ${_currentPosition!.latitude.toStringAsFixed(6)}\nLng: ${_currentPosition!.longitude.toStringAsFixed(6)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
-                    ],
+                Icon(Icons.location_on, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Current Location',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (!_locationPermissionGranted || _currentPosition == null)
-                  ElevatedButton(
-                    onPressed: _checkLocationPermission,
-                    child: const Text('Retry'),
-                  ),
               ],
+            ),
+            const SizedBox(height: 12),
+            if (_currentPosition != null) ...[
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Lat: ${_currentPosition!.latitude.toStringAsFixed(6)}, '
+                      'Lng: ${_currentPosition!.longitude.toStringAsFixed(6)}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Accuracy: ${_currentPosition!.accuracy.toStringAsFixed(1)}m',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  const Icon(Icons.error, color: Colors.red, size: 20),
+                  const SizedBox(width: 8),
+                  const Text('Location not available'),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompletionNotesCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.note_add, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Completion Notes',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notesController,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                hintText: 'Add any notes about task completion (optional)',
+                border: OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              validator: (value) {
+                // Notes are optional, so no validation required
+                return null;
+              },
             ),
           ],
         ),
@@ -395,84 +464,97 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
     );
   }
 
-  Widget _buildImageCard() {
+  Widget _buildCompletionImageCard() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Completion Image (Optional)',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
             Row(
               children: [
-                Icon(
-                  _completionImageBase64 != null ? Icons.camera_alt : Icons.camera_alt_outlined,
-                  color: _completionImageBase64 != null ? AppTheme.successColor : Colors.grey,
-                  size: 32,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Capture Completion Image',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _completionImageBase64 != null 
-                            ? 'Image captured successfully'
-                            : 'Optional: Take a photo showing completed work',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
+                Icon(Icons.camera_alt, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Completion Photo',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                ElevatedButton(
+                const Spacer(),
+                TextButton.icon(
                   onPressed: _captureCompletionImage,
-                  child: Text(_completionImageBase64 != null ? 'Retake' : 'Capture'),
+                  icon: Icon(_completionImage != null ? Icons.edit : Icons.add_a_photo),
+                  label: Text(_completionImage != null ? 'Change' : 'Add'),
                 ),
               ],
             ),
-            if (_completionImageBase64 != null) ...[
-              const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            if (_completionImage != null) ...[
               Container(
-                height: 100,
+                height: 200,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: AppTheme.successColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppTheme.successColor.withOpacity(0.3)),
+                  image: DecorationImage(
+                    image: FileImage(_completionImage!),
+                    fit: BoxFit.cover,
+                  ),
                 ),
-                child: Center(
-                  child: Column(
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Completion photo captured',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.green[700],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              InkWell(
+                onTap: _captureCompletionImage,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  height: 120,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.grey[300]!,
+                      width: 2,
+                      style: BorderStyle.solid,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.grey[50],
+                  ),
+                  child: const Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.check_circle,
-                        color: AppTheme.successColor,
-                        size: 32,
+                        Icons.camera_alt,
+                        size: 40,
+                        color: Colors.grey,
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       Text(
-                        'Completion Image Ready',
+                        'Tap to add completion photo',
                         style: TextStyle(
-                          color: AppTheme.successColor,
-                          fontWeight: FontWeight.w600,
+                          color: Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '(Optional)',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -486,55 +568,26 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
+  Widget _buildCompleteButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: CustomButton(
+        text: 'Complete Task',
+        onPressed: _isLoading ? null : _completeTask,
+        isLoading: _isLoading,
+        backgroundColor: Colors.green,
       ),
     );
   }
 
-  String _formatDateTime(String dateTimeString) {
+  String _formatDateTime(String? dateTimeString) {
+    if (dateTimeString == null) return 'Unknown';
+    
     try {
       final dateTime = DateTime.parse(dateTimeString);
       return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
     } catch (e) {
       return dateTimeString;
     }
-  }
-
-  String _getLocationStatusText() {
-    if (!_locationPermissionGranted) {
-      return 'Location permission required';
-    }
-    if (_currentPosition == null) {
-      return 'Getting current location...';
-    }
-    return 'Location acquired successfully';
-  }
-
-  bool _canCompleteTask() {
-    return _locationPermissionGranted &&
-        _currentPosition != null &&
-        _notesController.text.isNotEmpty;
   }
 }

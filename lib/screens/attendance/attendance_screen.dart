@@ -1,57 +1,52 @@
-import 'package:ems/models/attendance.dart';
+// lib/screens/attendance/attendance_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/attendance_provider.dart';
-import '../../config/theme.dart';
+import '../../models/attendance.dart';
 import '../../config/routes.dart';
+import '../../config/theme.dart';
 import '../../widgets/common/custom_app_bar.dart';
-import '../../widgets/common/custom_card.dart';
-import '../../widgets/attendance/attendance_card.dart';
-import '../../widgets/attendance/stats_card.dart';
 import '../../widgets/common/loading_widget.dart';
 
 class AttendanceScreen extends StatefulWidget {
-  const AttendanceScreen({Key? key}) : super(key: key);
+  const AttendanceScreen({super.key});
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
 }
 
-class _AttendanceScreenState extends State<AttendanceScreen>
-    with TickerProviderStateMixin {
-  late TabController _tabController;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-
+class _AttendanceScreenState extends State<AttendanceScreen> {
+  DateTime _selectedDate = DateTime.now();
   String _selectedMonth = DateFormat('yyyy-MM').format(DateTime.now());
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
-    );
-
-    _animationController.forward();
-    _loadAttendance();
+    _fetchAttendance();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _animationController.dispose();
-    super.dispose();
+  Future<void> _fetchAttendance() async {
+    final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
+    await attendanceProvider.fetchAttendance(month: _selectedMonth);
   }
 
-  Future<void> _loadAttendance() async {
-    final provider = Provider.of<AttendanceProvider>(context, listen: false);
-    await provider.fetchAttendance(month: _selectedMonth);
+  Future<void> _selectMonth() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDatePickerMode: DatePickerMode.day,
+    );
+
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+        _selectedMonth = DateFormat('yyyy-MM').format(picked);
+      });
+      await _fetchAttendance();
+    }
   }
 
   @override
@@ -61,343 +56,466 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         title: 'Attendance',
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadAttendance,
+            icon: const Icon(Icons.calendar_month),
+            onPressed: _selectMonth,
+            tooltip: 'Select Month',
           ),
         ],
       ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Column(
-          children: [
-            _buildQuickActions(),
-            _buildTabBar(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildStatsTab(),
-                  _buildHistoryTab(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+      body: Consumer<AttendanceProvider>(
+        builder: (context, attendanceProvider, child) {
+          if (attendanceProvider.isLoading) {
+            return const LoadingWidget();
+          }
 
-  Widget _buildQuickActions() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: AppTheme.surfaceColor,
-      child: Consumer<AttendanceProvider>(
-        builder: (context, provider, _) {
-          final permissions = provider.permissions;
-          
-          return Row(
-            children: [
-              Expanded(
-                child: _buildActionButton(
-                  'Check In',
-                  Icons.login,
-                  AppTheme.successColor,
-                  permissions?.canCheckIn == true
-                      ? () => Navigator.pushNamed(context, AppRoutes.checkIn)
-                      : null,
+          if (attendanceProvider.error != null) {
+            return _buildErrorWidget(attendanceProvider.error!);
+          }
+
+          return RefreshIndicator(
+            onRefresh: _fetchAttendance,
+            child: Column(
+              children: [
+                _buildHeader(attendanceProvider),
+                _buildQuickActions(attendanceProvider),
+                _buildStatsSection(attendanceProvider),
+                Expanded(
+                  child: _buildAttendanceList(attendanceProvider),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildActionButton(
-                  'Check Out',
-                  Icons.logout,
-                  Colors.orange,
-                  permissions?.canCheckOut == true
-                      ? () => Navigator.pushNamed(context, AppRoutes.checkOut)
-                      : null,
-                ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
     );
   }
 
-  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback? onTap) {
-    return ElevatedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: onTap != null ? color : Colors.grey,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-      ),
-    );
-  }
-
-  Widget _buildTabBar() {
-    return TabBar(
-      controller: _tabController,
-      labelColor: AppTheme.primaryColor,
-      unselectedLabelColor: Colors.grey,
-      indicatorColor: AppTheme.primaryColor,
-      tabs: const [
-        Tab(text: 'Summary'),
-        Tab(text: 'History'),
-      ],
-    );
-  }
-
-  Widget _buildStatsTab() {
-    return Consumer<AttendanceProvider>(
-      builder: (context, provider, _) {
-        if (provider.isLoading) {
-          return const LoadingWidget();
-        }
-
-        if (provider.error != null) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error, size: 64, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                Text(
-                  provider.error!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: _loadAttendance,
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return RefreshIndicator(
-          onRefresh: _loadAttendance,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _buildMonthSelector(),
-              const SizedBox(height: 16),
-              if (provider.summary != null) ...[
-                StatsCard(summary: provider.summary!),
-                const SizedBox(height: 16),
-              ],
-              if (provider.todayAttendance != null)
-                _buildTodayCard(provider.todayAttendance!),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildHistoryTab() {
-    return Consumer<AttendanceProvider>(
-      builder: (context, provider, _) {
-        if (provider.isLoading) {
-          return const LoadingWidget();
-        }
-
-        if (provider.error != null) {
-          return Center(child: Text(provider.error!));
-        }
-
-        return RefreshIndicator(
-          onRefresh: _loadAttendance,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: provider.attendanceList.length,
-            itemBuilder: (context, index) {
-              final attendance = provider.attendanceList[index];
-              return AttendanceCard(
-                attendance: attendance,
-                onTap: () => _showAttendanceDetails(attendance),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildMonthSelector() {
-    return CustomCard(
+  Widget _buildErrorWidget(String error) {
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            const Icon(Icons.calendar_month, color: AppTheme.primaryColor),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                DateFormat('MMMM yyyy').format(DateTime.parse('$_selectedMonth-01')),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            IconButton(
-              onPressed: () => _selectMonth(),
-              icon: const Icon(Icons.keyboard_arrow_down),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTodayCard(TodayAttendance todayAttendance) {
-    return CustomCard(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text(
-              'Today\'s Attendance',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Check In',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        todayAttendance.checkInTime != null
-                            ? DateFormat('HH:mm').format(
-                                DateTime.parse(todayAttendance.checkInTime!))
-                            : 'Not checked in',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Check Out',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        todayAttendance.checkOutTime != null
-                            ? DateFormat('HH:mm').format(
-                                DateTime.parse(todayAttendance.checkOutTime!))
-                            : 'Not checked out',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _selectMonth() {
-    showDatePicker(
-      context: context,
-      initialDate: DateTime.parse('$_selectedMonth-01'),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-    ).then((selectedDate) {
-      if (selectedDate != null) {
-        setState(() {
-          _selectedMonth = DateFormat('yyyy-MM').format(selectedDate);
-        });
-        _loadAttendance();
-      }
-    });
-  }
-
-  void _showAttendanceDetails(attendance) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Attendance Details',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red[300],
             ),
             const SizedBox(height: 16),
-            _buildDetailRow('Date', attendance.date),
-            _buildDetailRow('Check In', attendance.checkInTime ?? 'Not checked in'),
-            _buildDetailRow('Check Out', attendance.checkOutTime ?? 'Not checked out'),
-            _buildDetailRow('Working Hours', '${attendance.workingHours ?? 0} hours'),
-            _buildDetailRow('Status', attendance.status ?? 'Pending'),
-            _buildDetailRow('Site', attendance.siteName ?? 'Unknown'),
+            Text(
+              'Failed to load attendance',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.red[700],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _fetchAttendance,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+  Widget _buildHeader(AttendanceProvider attendanceProvider) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: AppTheme.primaryColor.withOpacity(0.1),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Attendance for',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+                ),
+                Text(
+                  DateFormat('MMMM yyyy').format(_selectedDate),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+              ],
             ),
           ),
+          _buildTodayStatus(attendanceProvider),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTodayStatus(AttendanceProvider attendanceProvider) {
+    final todayAttendance = attendanceProvider.todayAttendance;
+    
+    if (todayAttendance == null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey[300],
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          'Not Checked In',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _getStatusColor(todayAttendance.status),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        todayAttendance.status.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActions(AttendanceProvider attendanceProvider) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            child: _buildActionButton(
+              icon: Icons.login,
+              label: 'Check In',
+              color: Colors.green,
+              enabled: attendanceProvider.canCheckIn,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.checkIn),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.logout,
+              label: 'Check Out',
+              color: Colors.orange,
+              enabled: attendanceProvider.canCheckOut,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.checkOut),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required bool enabled,
+    required VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: enabled ? color.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: enabled ? color : Colors.grey,
+            width: 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: enabled ? color : Colors.grey,
+              size: 28,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: enabled ? color : Colors.grey,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsSection(AttendanceProvider attendanceProvider) {
+    final stats = attendanceProvider.getMonthlyStats();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildStatItem(
+              'Total',
+              stats['total'].toString(),
+              Colors.blue,
+            ),
+          ),
+          Expanded(
+            child: _buildStatItem(
+              'Approved',
+              stats['approved'].toString(),
+              Colors.green,
+            ),
+          ),
+          Expanded(
+            child: _buildStatItem(
+              'Pending',
+              stats['pending'].toString(),
+              Colors.orange,
+            ),
+          ),
+          Expanded(
+            child: _buildStatItem(
+              'Rejected',
+              stats['rejected'].toString(),
+              Colors.red,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAttendanceList(AttendanceProvider attendanceProvider) {
+    final attendanceList = attendanceProvider.attendanceList;
+
+    if (attendanceList.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.calendar_today,
+                size: 64,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No attendance records',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Start by checking in to create your first record',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[500],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: attendanceList.length,
+      itemBuilder: (context, index) {
+        final attendance = attendanceList[index];
+        return _buildAttendanceCard(attendance);
+      },
+    );
+  }
+
+  Widget _buildAttendanceCard(Attendance attendance) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  DateFormat('EEEE, MMM dd').format(DateTime.parse(attendance.date)),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(attendance.status),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    attendance.status.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildTimeInfo(
+                    'Check In',
+                    attendance.checkInTime ?? '--:--',
+                    Icons.login,
+                    Colors.green,
+                  ),
+                ),
+                Expanded(
+                  child: _buildTimeInfo(
+                    'Check Out',
+                    attendance.checkOutTime ?? '--:--',
+                    Icons.logout,
+                    Colors.orange,
+                  ),
+                ),
+                Expanded(
+                  child: _buildTimeInfo(
+                    'Hours',
+                    attendance.workingHours?.toStringAsFixed(1) ?? '0.0',
+                    Icons.schedule,
+                    Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+            if (attendance.siteName != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      attendance.siteName!,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeInfo(String label, String time, IconData icon, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          time,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 10,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'approved':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'rejected':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 }

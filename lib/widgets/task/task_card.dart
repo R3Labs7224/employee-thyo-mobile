@@ -42,7 +42,7 @@ class TaskCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              task.description,
+              task.description??"des",
               style: TextStyle(
                 color: Colors.grey[600],
                 fontSize: 14,

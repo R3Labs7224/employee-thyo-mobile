@@ -1,19 +1,22 @@
+// lib/screens/tasks/create_task_screen.dart
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../providers/task_provider.dart';
-import '../../providers/auth_provider.dart';
+import '../../providers/site_provider.dart';
+import '../../models/site.dart';
 import '../../services/location_service.dart';
 import '../../services/camera_service.dart';
 import '../../config/theme.dart';
-import '../../config/app_config.dart';
 import '../../widgets/common/custom_app_bar.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/loading_widget.dart';
-import '../../utils/validators.dart';
 
 class CreateTaskScreen extends StatefulWidget {
-  const CreateTaskScreen({Key? key}) : super(key: key);
+  const CreateTaskScreen({super.key});
 
   @override
   State<CreateTaskScreen> createState() => _CreateTaskScreenState();
@@ -28,54 +31,70 @@ class _CreateTaskScreenState extends State<CreateTaskScreen>
   final LocationService _locationService = LocationService();
   final CameraService _cameraService = CameraService();
 
+  Site? _selectedSite;
+  List<Site> _availableSites = [];
   Position? _currentPosition;
+  File? _taskImage;
   String? _taskImageBase64;
   bool _isLoading = false;
-  bool _locationPermissionGranted = false;
+  String? _error;
 
   late AnimationController _animationController;
-  late Animation<double> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _slideAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
-    );
-
-    _animationController.forward();
-    _checkLocationPermission();
+    _initializeScreen();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
-  Future<void> _checkLocationPermission() async {
+  Future<void> _initializeScreen() async {
     setState(() {
       _isLoading = true;
+      _error = null;
     });
 
-    final permission = await _locationService.checkLocationPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      final requestResult = await _locationService.requestLocationPermission();
-      _locationPermissionGranted = requestResult != LocationPermission.denied &&
-          requestResult != LocationPermission.deniedForever;
-    } else {
-      _locationPermissionGranted = true;
-    }
+    try {
+      // Check location permission
+      final hasPermission = await _locationService.checkPermission();
+      if (!hasPermission) {
+        final granted = await _locationService.requestPermission();
+        if (!granted) {
+          setState(() {
+            _error = 'Location permission is required to create tasks';
+            _isLoading = false;
+          });
+          return;
+        }
+      }
 
-    if (_locationPermissionGranted) {
-      await _getCurrentLocation();
+      // Get current location
+      final position = await _locationService.getCurrentPosition();
+      if (position != null) {
+        _currentPosition = position;
+      }
+
+      // Fetch available sites
+      if (mounted) {
+        final siteProvider = Provider.of<SiteProvider>(context, listen: false);
+        await siteProvider.fetchSites();
+        _availableSites = siteProvider.sites;
+      }
+
+      _animationController.forward();
+    } catch (e) {
+      _error = 'Failed to initialize: ${e.toString()}';
     }
 
     setState(() {
@@ -83,34 +102,52 @@ class _CreateTaskScreenState extends State<CreateTaskScreen>
     });
   }
 
-  Future<void> _getCurrentLocation() async {
-    final position = await _locationService.getCurrentPosition();
-    if (position != null) {
-      setState(() {
-        _currentPosition = position;
-      });
+  Future<void> _captureTaskImage() async {
+    try {
+      final XFile? image = await _cameraService.captureTaskImage();
+      if (image != null) {
+        await _processImage(image);
+      }
+    } catch (e) {
+      _showErrorSnackBar('Failed to capture image: ${e.toString()}');
     }
   }
 
-  Future<void> _captureTaskImage() async {
-    final image = await _cameraService.captureTaskImage();
-    if (image != null) {
+  Future<void> _processImage(XFile imageFile) async {
+    try {
+      final File file = File(imageFile.path);
+      
+      // Validate image file
+      if (!_cameraService.validateImageFile(file)) {
+        _showErrorSnackBar('Invalid image file. Please select a valid image (max 5MB).');
+        return;
+      }
+
+      // Convert to base64
+      final bytes = await file.readAsBytes();
+      final base64String = base64Encode(bytes);
+
       setState(() {
-        _taskImageBase64 = image;
+        _taskImage = file;
+        _taskImageBase64 = 'data:image/jpeg;base64,$base64String';
       });
+    } catch (e) {
+      _showErrorSnackBar('Failed to process image: ${e.toString()}');
     }
   }
 
   Future<void> _createTask() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    if (_currentPosition == null) {
-      _showErrorDialog('Location is required to create a task');
+    if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    if (_taskImageBase64 == null) {
-      _showErrorDialog('Task image is required');
+    if (_selectedSite == null) {
+      _showErrorSnackBar('Please select a site');
+      return;
+    }
+
+    if (_currentPosition == null) {
+      _showErrorSnackBar('Location not available');
       return;
     }
 
@@ -118,25 +155,28 @@ class _CreateTaskScreenState extends State<CreateTaskScreen>
       _isLoading = true;
     });
 
-    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final employee = authProvider.employee;
-
-    if (employee != null) {
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      
       final success = await taskProvider.createTask(
         title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        siteId: 1, // This should be dynamic based on employee's site
+        description: _descriptionController.text.trim().isNotEmpty 
+            ? _descriptionController.text.trim() 
+            : null,
+        siteId: _selectedSite!.id,
         latitude: _currentPosition!.latitude,
         longitude: _currentPosition!.longitude,
-        imageBase64: _taskImageBase64!,
+        taskImageBase64: _taskImageBase64,
       );
 
-      if (success) {
-        _showSuccessDialog();
-      } else {
-        _showErrorDialog(taskProvider.error ?? 'Failed to create task');
+      if (success && mounted) {
+        _showSuccessSnackBar('Task created successfully!');
+        Navigator.pop(context);
+      } else if (mounted) {
+        _showErrorSnackBar(taskProvider.error ?? 'Failed to create task');
       }
+    } catch (e) {
+      _showErrorSnackBar('Failed to create task: ${e.toString()}');
     }
 
     setState(() {
@@ -144,321 +184,379 @@ class _CreateTaskScreenState extends State<CreateTaskScreen>
     });
   }
 
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+  void _showErrorSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Success'),
-        content: const Text('Task created successfully!'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+  void _showSuccessSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const CustomAppBar(title: 'Create Task'),
+      appBar: const CustomAppBar(
+        title: 'Create Task',
+        showBackButton: true,
+      ),
       body: _isLoading
-          ? const LoadingWidget(message: 'Creating task...')
-          : SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.3),
-                end: Offset.zero,
-              ).animate(_animationController),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildInfoBanner(),
-                      const SizedBox(height: 24),
-                      _buildTaskDetailsForm(),
-                      const SizedBox(height: 24),
-                      _buildLocationCard(),
-                      const SizedBox(height: 24),
-                      _buildImageCard(),
-                      const SizedBox(height: 24),
-                      _buildSiteInfo(),
-                      const SizedBox(height: 32),
-                      CustomButton(
-                        text: 'Create Task',
-                        onPressed: _canCreateTask() ? _createTask : null,
-                        width: double.infinity,
-                        backgroundColor: AppTheme.primaryColor,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          ? const LoadingWidget()
+          : _error != null
+              ? _buildErrorWidget()
+              : _buildTaskForm(),
     );
   }
 
-  Widget _buildInfoBanner() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red,
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Task Creation Error',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Failed to initialize task creation',
+              style: TextStyle(
+                color: Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: null,
+              child: Text('Retry'),
+            ),
+          ],
+        ),
       ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.info_outline,
-            color: AppTheme.primaryColor,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    );
+  }
+
+  Widget _buildTaskForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTitleField(),
+            const SizedBox(height: 16),
+            _buildDescriptionField(),
+            const SizedBox(height: 16),
+            _buildSiteSelection(),
+            const SizedBox(height: 16),
+            _buildLocationInfo(),
+            const SizedBox(height: 16),
+            _buildTaskImageSection(),
+            const SizedBox(height: 32),
+            _buildCreateButton(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTitleField() {
+    return TextFormField(
+      controller: _titleController,
+      decoration: const InputDecoration(
+        labelText: 'Task Title *',
+        hintText: 'Enter task title',
+        prefixIcon: Icon(Icons.title),
+        border: OutlineInputBorder(),
+      ),
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Please enter a task title';
+        }
+        if (value.trim().length < 3) {
+          return 'Title must be at least 3 characters';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildDescriptionField() {
+    return TextFormField(
+      controller: _descriptionController,
+      maxLines: 3,
+      decoration: const InputDecoration(
+        labelText: 'Description',
+        hintText: 'Enter task description (optional)',
+        prefixIcon: Icon(Icons.description),
+        border: OutlineInputBorder(),
+      ),
+    );
+  }
+
+  Widget _buildSiteSelection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
+                Icon(Icons.business, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
                 Text(
-                  'Task Creation Guidelines',
-                  style: TextStyle(
-                    color: AppTheme.primaryColor,
+                  'Select Site *',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '• Only one active task allowed at a time\n• Task must be completed before creating new one\n• Location and image are mandatory',
-                  style: TextStyle(
-                    color: AppTheme.primaryColor,
-                    fontSize: 12,
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTaskDetailsForm() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Task Details',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Task Title *',
-                hintText: 'Enter task title',
-                prefixIcon: Icon(Icons.title),
-              ),
-              validator: Validators.required,
-              maxLength: 100,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description *',
-                hintText: 'Describe the task in detail',
-                prefixIcon: Icon(Icons.description),
-              ),
-              validator: Validators.required,
-              maxLines: 4,
-              maxLength: 500,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLocationCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Location Information',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(
-                  _locationPermissionGranted && _currentPosition != null
-                      ? Icons.location_on
-                      : Icons.location_off,
-                  color: _locationPermissionGranted && _currentPosition != null
-                      ? AppTheme.successColor
-                      : Colors.red,
-                  size: 32,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'GPS Location',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _getLocationStatusText(),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (_currentPosition != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Lat: ${_currentPosition!.latitude.toStringAsFixed(6)}\nLng: ${_currentPosition!.longitude.toStringAsFixed(6)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (!_locationPermissionGranted || _currentPosition == null)
-                  ElevatedButton(
-                    onPressed: _checkLocationPermission,
-                    child: const Text('Retry'),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImageCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Task Image',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(
-                  _taskImageBase64 != null ? Icons.camera_alt : Icons.camera_alt_outlined,
-                  color: _taskImageBase64 != null ? AppTheme.successColor : Colors.grey,
-                  size: 32,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Capture Task Image *',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _taskImageBase64 != null 
-                            ? 'Image captured successfully'
-                            : 'Take a photo related to your task',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: _captureTaskImage,
-                  child: Text(_taskImageBase64 != null ? 'Retake' : 'Capture'),
-                ),
-              ],
-            ),
-            if (_taskImageBase64 != null) ...[
-              const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            if (_availableSites.isEmpty) ...[
               Container(
-                height: 100,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'No sites available. Please contact administrator.',
+                        style: TextStyle(color: Colors.orange),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              DropdownButtonFormField<Site>(
+                value: _selectedSite,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Choose Site',
+                ),
+                items: _availableSites.map((site) {
+                  final distance = _currentPosition != null && site.hasCoordinates
+                      ? _calculateDistance(site)
+                      : null;
+
+                  return DropdownMenuItem<Site>(
+                    value: site,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(site.name),
+                        if (distance != null)
+                          Text(
+                            '${distance.toStringAsFixed(0)}m away',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (site) {
+                  setState(() {
+                    _selectedSite = site;
+                  });
+                },
+                validator: (value) {
+                  if (value == null) {
+                    return 'Please select a site';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationInfo() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.location_on, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Current Location',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_currentPosition != null) ...[
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Lat: ${_currentPosition!.latitude.toStringAsFixed(6)}, '
+                      'Lng: ${_currentPosition!.longitude.toStringAsFixed(6)}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Accuracy: ${_currentPosition!.accuracy.toStringAsFixed(1)}m',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+            ] else ...[
+              const Row(
+                children: [
+                  Icon(Icons.error, color: Colors.red, size: 20),
+                  SizedBox(width: 8),
+                  Text('Location not available'),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskImageSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.camera_alt, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Task Image',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _captureTaskImage,
+                  icon: Icon(_taskImage != null ? Icons.edit : Icons.add_a_photo),
+                  label: Text(_taskImage != null ? 'Change' : 'Add'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_taskImage != null) ...[
+              Container(
+                height: 200,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: AppTheme.successColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppTheme.successColor.withOpacity(0.3)),
+                  image: DecorationImage(
+                    image: FileImage(_taskImage!),
+                    fit: BoxFit.cover,
+                  ),
                 ),
-                child: Center(
-                  child: Column(
+              ),
+              const SizedBox(height: 8),
+              const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Task image captured',
+                      style: TextStyle(
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              InkWell(
+                onTap: _captureTaskImage,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  height: 120,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.grey[300]!,
+                      width: 2,
+                      style: BorderStyle.solid,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.grey[50],
+                  ),
+                  child: const Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.check_circle,
-                        color: AppTheme.successColor,
-                        size: 32,
+                        Icons.camera_alt,
+                        size: 40,
+                        color: Colors.grey,
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       Text(
-                        'Image Ready',
+                        'Tap to add task image',
                         style: TextStyle(
-                          color: AppTheme.successColor,
-                          fontWeight: FontWeight.w600,
+                          color: Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '(Optional)',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -472,75 +570,32 @@ class _CreateTaskScreenState extends State<CreateTaskScreen>
     );
   }
 
-  Widget _buildSiteInfo() {
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, _) {
-        final employee = authProvider.employee;
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Site Information',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Icon(Icons.business, color: AppTheme.primaryColor),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            employee?.siteName ?? 'Unknown Site',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            employee?.siteAddress ?? 'Unknown Address',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+  Widget _buildCreateButton() {
+    final canCreate = _selectedSite != null &&
+        _currentPosition != null &&
+        !_isLoading;
+
+    return SizedBox(
+      width: double.infinity,
+      child: CustomButton(
+        text: 'Create Task',
+        onPressed: canCreate ? _createTask : null,
+        isLoading: _isLoading,
+        backgroundColor: AppTheme.primaryColor,
+      ),
     );
   }
 
-  String _getLocationStatusText() {
-    if (!_locationPermissionGranted) {
-      return 'Location permission required';
+  double _calculateDistance(Site site) {
+    if (_currentPosition == null || !site.hasCoordinates) {
+      return 0.0;
     }
-    if (_currentPosition == null) {
-      return 'Getting current location...';
-    }
-    return 'Location acquired successfully';
-  }
 
-  bool _canCreateTask() {
-    return _locationPermissionGranted &&
-        _currentPosition != null &&
-        _taskImageBase64 != null &&
-        _titleController.text.isNotEmpty &&
-        _descriptionController.text.isNotEmpty;
+    return _locationService.calculateDistance(
+      _currentPosition!.latitude,
+      _currentPosition!.longitude,
+      site.latitude!,
+      site.longitude!,
+    );
   }
 }

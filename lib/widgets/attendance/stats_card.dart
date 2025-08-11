@@ -105,7 +105,7 @@ class StatsCard extends StatelessWidget {
                   Column(
                     children: [
                       Text(
-                        '${summary.avgHours.toStringAsFixed(1)}h',
+                        '${summary.averageHours.toStringAsFixed(1)}h',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,

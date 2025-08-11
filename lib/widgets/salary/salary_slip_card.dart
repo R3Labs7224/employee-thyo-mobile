@@ -67,7 +67,7 @@ class SalarySlipCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  'Generated: ${Helpers.formatDate(DateTime.parse(salarySlip.generatedDate))}',
+                  'Generated: ${Helpers.formatDate(DateTime.parse(salarySlip.createdAt.toString()))}',
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 12,
@@ -115,7 +115,7 @@ class SalarySlipCard extends StatelessWidget {
 
   Widget _buildStatusChip() {
     Color chipColor;
-    switch (salarySlip.status.toLowerCase()) {
+    switch (salarySlip.basicSalary.toString().toLowerCase()) {
       case 'paid':
         chipColor = AppTheme.successColor;
         break;
@@ -137,7 +137,7 @@ class SalarySlipCard extends StatelessWidget {
         border: Border.all(color: chipColor.withOpacity(0.3)),
       ),
       child: Text(
-        salarySlip.status.toUpperCase(),
+        salarySlip.presentDays.toString(),
         style: TextStyle(
           color: chipColor,
           fontSize: 10,

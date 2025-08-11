@@ -1,10 +1,10 @@
+// lib/providers/petty_cash_provider.dart
 import 'package:flutter/material.dart';
 import '../models/petty_cash.dart';
-import '../services/api_service.dart';
-import '../config/app_config.dart';
+import '../services/petty_cash_service.dart';
 
 class PettyCashProvider with ChangeNotifier {
-  final ApiService _apiService = ApiService();
+  final PettyCashService _pettyCashService = PettyCashService();
 
   List<PettyCashRequest> _requests = [];
   PettyCashSummary? _summary;
@@ -17,26 +17,34 @@ class PettyCashProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  // Filter getters
+  List<PettyCashRequest> get pendingRequests => 
+      _pettyCashService.filterByStatus(_requests, 'pending');
+  
+  List<PettyCashRequest> get approvedRequests => 
+      _pettyCashService.filterByStatus(_requests, 'approved');
+  
+  List<PettyCashRequest> get rejectedRequests => 
+      _pettyCashService.filterByStatus(_requests, 'rejected');
+
+  // Statistics getters
+  int get pendingCount => _pettyCashService.getPendingRequestsCount(_requests);
+  double get approvedAmount => _pettyCashService.getApprovedAmount(_requests);
+  double get totalRequestedAmount => _pettyCashService.getTotalRequestedAmount(_requests);
+
+  // Fetch petty cash requests
   Future<void> fetchPettyCashRequests({String? month}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final queryParams = <String, String>{};
-      if (month != null) {
-        queryParams['month'] = month;
-      }
-
-      final response = await _apiService.get<PettyCashResponse>(
-        AppConfig.pettyCashEndpoint,
-        queryParams: queryParams,
-        fromJson: (data) => PettyCashResponse.fromJson(data),
-      );
+      final response = await _pettyCashService.getPettyCashRequests(month: month);
 
       if (response.success && response.data != null) {
         _requests = response.data!.requests;
         _summary = response.data!.summary;
+        _error = null;
       } else {
         _error = response.message;
       }
@@ -48,10 +56,11 @@ class PettyCashProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Submit new petty cash request
   Future<bool> submitRequest({
     required double amount,
     required String reason,
-    required String requestDate,
+    String? requestDate,
     String? receiptImageBase64,
   }) async {
     _isLoading = true;
@@ -59,19 +68,11 @@ class PettyCashProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final body = <String, dynamic>{
-        'amount': amount,
-        'reason': reason,
-        'request_date': requestDate,
-      };
-
-      if (receiptImageBase64 != null) {
-        body['receipt_image'] = receiptImageBase64;
-      }
-
-      final response = await _apiService.post(
-        AppConfig.pettyCashEndpoint,
-        body,
+      final response = await _pettyCashService.createPettyCashRequest(
+        amount: amount,
+        reason: reason,
+        requestDate: requestDate,
+        receiptImageBase64: receiptImageBase64,
       );
 
       if (response.success) {
@@ -94,7 +95,39 @@ class PettyCashProvider with ChangeNotifier {
     }
   }
 
+  // Get requests for current month
+  List<PettyCashRequest> getCurrentMonthRequests() {
+    return _pettyCashService.getCurrentMonthRequests(_requests);
+  }
+
+  // Get request by ID
+  PettyCashRequest? getRequestById(int requestId) {
+    try {
+      return _requests.firstWhere((request) => request.id == requestId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Get requests by date range
+  List<PettyCashRequest> getRequestsByDateRange(DateTime startDate, DateTime endDate) {
+    return _requests.where((request) {
+      final requestDate = DateTime.parse(request.requestDate);
+      return requestDate.isAfter(startDate.subtract(const Duration(days: 1))) &&
+             requestDate.isBefore(endDate.add(const Duration(days: 1)));
+    }).toList();
+  }
+
+  // Clear error
   void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
+  // Reset data
+  void reset() {
+    _requests.clear();
+    _summary = null;
     _error = null;
     notifyListeners();
   }

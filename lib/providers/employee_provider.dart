@@ -1,42 +1,38 @@
+// lib/providers/employee_provider.dart
 import 'package:flutter/material.dart';
 import '../models/employee.dart';
-import '../services/api_service.dart';
-import '../config/app_config.dart';
+import '../services/employee_service.dart';
 
 class EmployeeProvider with ChangeNotifier {
-  final ApiService _apiService = ApiService();
+  final EmployeeService _employeeService = EmployeeService();
 
   Employee? _employee;
-  MonthlyStats? _monthlyStats;
-  PettyCashStats? _pettyCashStats;
   AttendanceStats? _attendanceStats;
+  PettyCashStats? _pettyCashStats;
   bool _isLoading = false;
   String? _error;
 
   // Getters
   Employee? get employee => _employee;
-  MonthlyStats? get monthlyStats => _monthlyStats;
-  PettyCashStats? get pettyCashStats => _pettyCashStats;
   AttendanceStats? get attendanceStats => _attendanceStats;
+  PettyCashStats? get pettyCashStats => _pettyCashStats;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  // Fetch employee profile
+  // Fetch employee profile with stats
   Future<void> fetchProfile() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _apiService.get<ProfileResponse>(
-        AppConfig.profileEndpoint,
-        fromJson: (data) => ProfileResponse.fromJson(data),
-      );
+      final response = await _employeeService.getProfile();
 
       if (response.success && response.data != null) {
         _employee = response.data!.profile;
         _attendanceStats = response.data!.attendanceStats;
         _pettyCashStats = response.data!.pettyCashStats;
+        _error = null;
       } else {
         _error = response.message;
       }
@@ -48,22 +44,19 @@ class EmployeeProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Update employee profile
+  // Update profile (only email and phone)
   Future<bool> updateProfile({
-    required String email,
-    required String phone,
+    String? email,
+    String? phone,
   }) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _apiService.put(
-        AppConfig.profileEndpoint,
-        {
-          'email': email,
-          'phone': phone,
-        },
+      final response = await _employeeService.updateProfile(
+        email: email,
+        phone: phone,
       );
 
       if (response.success) {
@@ -73,22 +66,21 @@ class EmployeeProvider with ChangeNotifier {
             id: _employee!.id,
             employeeCode: _employee!.employeeCode,
             name: _employee!.name,
-            email: email,
-            phone: phone,
+            email: email ?? _employee!.email,
+            phone: phone ?? _employee!.phone,
+            basicSalary: _employee!.basicSalary,
+            dailyWage: _employee!.dailyWage,
+            joiningDate: _employee!.joiningDate,
             departmentName: _employee!.departmentName,
             shiftName: _employee!.shiftName,
             startTime: _employee!.startTime,
             endTime: _employee!.endTime,
             siteName: _employee!.siteName,
             siteAddress: _employee!.siteAddress,
-            siteLatitude: _employee!.siteLatitude,
-            siteLongitude: _employee!.siteLongitude,
-            basicSalary: _employee!.basicSalary,
-            dailyWage: _employee!.dailyWage,
-            joiningDate: _employee!.joiningDate,
           );
         }
-        
+
+        _error = null;
         _isLoading = false;
         notifyListeners();
         return true;
@@ -106,86 +98,59 @@ class EmployeeProvider with ChangeNotifier {
     }
   }
 
-  // Set employee data (used by AuthProvider after login)
-  void setEmployee(Employee employee) {
-    _employee = employee;
+  // Update employee data locally (for auth updates)
+  void updateEmployee(Employee updatedEmployee) {
+    _employee = updatedEmployee;
     notifyListeners();
   }
 
-  // Set monthly stats (used by AuthProvider after login)
-  void setMonthlyStats(MonthlyStats stats) {
-    _monthlyStats = stats;
-    notifyListeners();
-  }
-
-  // Clear employee data (used during logout)
-  void clearEmployeeData() {
-    _employee = null;
-    _monthlyStats = null;
-    _pettyCashStats = null;
-    _attendanceStats = null;
-    _error = null;
-    notifyListeners();
-  }
-
-  // Get employee's work shift information
-  WorkShiftInfo? get workShiftInfo {
-    if (_employee == null) return null;
+  // Get employee basic info
+  Map<String, String?> getBasicInfo() {
+    if (_employee == null) return {};
     
-    return WorkShiftInfo(
-      shiftName: _employee!.shiftName,
-      startTime: _employee!.startTime,
-      endTime: _employee!.endTime,
-    );
+    return {
+      'name': _employee!.name,
+      'employeeCode': _employee!.employeeCode,
+      'email': _employee!.email,
+      'phone': _employee!.phone,
+      'department': _employee!.departmentName,
+      'joiningDate': _employee!.joiningDate,
+    };
   }
 
-  // Get employee's site information
-  SiteInfo? get siteInfo {
-    if (_employee == null) return null;
+  // Get work schedule info
+  Map<String, String?> getWorkSchedule() {
+    if (_employee == null) return {};
     
-    return SiteInfo(
-      siteName: _employee!.siteName,
-      siteAddress: _employee!.siteAddress,
-      latitude: _employee!.siteLatitude,
-      longitude: _employee!.siteLongitude,
-    );
+    return {
+      'shiftName': _employee!.shiftName,
+      'startTime': _employee!.startTime,
+      'endTime': _employee!.endTime,
+      'siteName': _employee!.siteName,
+      'siteAddress': _employee!.siteAddress,
+    };
   }
 
-  // Get employee's salary information
-  SalaryInfo? get salaryInfo {
-    if (_employee == null) return null;
+  // Get salary info
+  Map<String, double?> getSalaryInfo() {
+    if (_employee == null) return {};
     
-    return SalaryInfo(
-      basicSalary: _employee!.basicSalary,
-      dailyWage: _employee!.dailyWage,
-    );
+    return {
+      'basicSalary': _employee!.basicSalary,
+      'dailyWage': _employee!.dailyWage,
+    };
   }
 
-  // Check if employee data is available
-  bool get hasEmployeeData => _employee != null;
-
-  // Get employee's full name with code
-  String get employeeDisplayName {
-    if (_employee == null) return 'Unknown Employee';
-    return '${_employee!.name} (${_employee!.employeeCode})';
+  // Get attendance performance
+  double get attendancePercentage {
+    if (_attendanceStats == null || _attendanceStats!.totalDays == 0) return 0.0;
+    return (_attendanceStats!.approvedDays / _attendanceStats!.totalDays) * 100;
   }
 
-  // Get employee initials for avatar
-  String get employeeInitials {
-    if (_employee == null || _employee!.name.isEmpty) return 'E';
-    
-    final nameParts = _employee!.name.split(' ');
-    if (nameParts.length == 1) {
-      return nameParts[0][0].toUpperCase();
-    }
-    return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
-  }
-
-  // Validate if employee can perform certain actions
-  bool canPerformLocationBasedActions() {
-    return _employee != null && 
-           _employee!.siteLatitude != 0 && 
-           _employee!.siteLongitude != 0;
+  // Get average working hours
+  double get averageWorkingHours {
+    if (_attendanceStats == null || _attendanceStats!.approvedDays == 0) return 0.0;
+    return _attendanceStats!.totalHours / _attendanceStats!.approvedDays;
   }
 
   // Clear error
@@ -194,153 +159,12 @@ class EmployeeProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Refresh employee data
-  Future<void> refreshEmployeeData() async {
-    await fetchProfile();
-  }
-}
-
-// Additional models for employee provider
-class ProfileResponse {
-  final Employee profile;
-  final AttendanceStats attendanceStats;
-  final PettyCashStats pettyCashStats;
-
-  ProfileResponse({
-    required this.profile,
-    required this.attendanceStats,
-    required this.pettyCashStats,
-  });
-
-  factory ProfileResponse.fromJson(Map<String, dynamic> json) {
-    return ProfileResponse(
-      profile: Employee.fromJson(json['profile']),
-      attendanceStats: AttendanceStats.fromJson(json['attendance_stats']),
-      pettyCashStats: PettyCashStats.fromJson(json['petty_cash_stats']),
-    );
-  }
-}
-
-class AttendanceStats {
-  final int totalDays;
-  final int approvedDays;
-  final double totalHours;
-
-  AttendanceStats({
-    required this.totalDays,
-    required this.approvedDays,
-    required this.totalHours,
-  });
-
-  factory AttendanceStats.fromJson(Map<String, dynamic> json) {
-    return AttendanceStats(
-      totalDays: json['total_days'],
-      approvedDays: json['approved_days'],
-      totalHours: json['total_hours'].toDouble(),
-    );
-  }
-}
-
-class PettyCashStats {
-  final int totalRequests;
-  final double approvedAmount;
-  final double pendingAmount;
-
-  PettyCashStats({
-    required this.totalRequests,
-    required this.approvedAmount,
-    required this.pendingAmount,
-  });
-
-  factory PettyCashStats.fromJson(Map<String, dynamic> json) {
-    return PettyCashStats(
-      totalRequests: json['total_requests'],
-      approvedAmount: json['approved_amount'].toDouble(),
-      pendingAmount: json['pending_amount'].toDouble(),
-    );
-  }
-}
-
-class WorkShiftInfo {
-  final String shiftName;
-  final String startTime;
-  final String endTime;
-
-  WorkShiftInfo({
-    required this.shiftName,
-    required this.startTime,
-    required this.endTime,
-  });
-
-  // Parse time string to Duration
-  Duration get startDuration {
-    final parts = startTime.split(':');
-    return Duration(
-      hours: int.parse(parts[0]),
-      minutes: int.parse(parts[1]),
-    );
-  }
-
-  Duration get endDuration {
-    final parts = endTime.split(':');
-    return Duration(
-      hours: int.parse(parts[0]),
-      minutes: int.parse(parts[1]),
-    );
-  }
-
-  // Calculate shift duration
-  Duration get shiftDuration {
-    return endDuration - startDuration;
-  }
-
-  // Get formatted shift time
-  String get formattedShiftTime => '$startTime - $endTime';
-}
-
-class SiteInfo {
-  final String siteName;
-  final String siteAddress;
-  final double latitude;
-  final double longitude;
-
-  SiteInfo({
-    required this.siteName,
-    required this.siteAddress,
-    required this.latitude,
-    required this.longitude,
-  });
-
-  // Get formatted coordinates
-  String get formattedCoordinates => '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
-}
-
-class SalaryInfo {
-  final String? basicSalary;
-  final String? dailyWage;
-
-  SalaryInfo({
-    this.basicSalary,
-    this.dailyWage,
-  });
-
-  // Check if employee has basic salary
-  bool get hasBasicSalary => basicSalary != null ;
-
-  // Check if employee has daily wage
-  bool get hasDailyWage => dailyWage != null ;
-
-  // Get primary salary type
-  String get salaryType {
-    if (hasBasicSalary) return 'Monthly Salary';
-    if (hasDailyWage) return 'Daily Wage';
-    return 'Not Set';
-  }
-
-  // Get primary salary amount
-  String get primarySalaryAmount {
-    if (hasBasicSalary) return basicSalary!;
-    if (hasDailyWage) return dailyWage!;
-    return "0.0";
+  // Reset data
+  void reset() {
+    _employee = null;
+    _attendanceStats = null;
+    _pettyCashStats = null;
+    _error = null;
+    notifyListeners();
   }
 }

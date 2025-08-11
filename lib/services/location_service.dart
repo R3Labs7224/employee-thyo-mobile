@@ -1,53 +1,57 @@
+// lib/services/location_service.dart
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
-  static final LocationService _instance = LocationService._internal();
-  factory LocationService() => _instance;
-  LocationService._internal();
+  // Check if location permission is granted
+  Future<bool> checkPermission() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.whileInUse || 
+           permission == LocationPermission.always;
+  }
 
+  // Request location permission
+  Future<bool> requestPermission() async {
+    LocationPermission permission = await Geolocator.requestPermission();
+    return permission == LocationPermission.whileInUse || 
+           permission == LocationPermission.always;
+  }
+
+  // Check if location services are enabled
   Future<bool> isLocationServiceEnabled() async {
     return await Geolocator.isLocationServiceEnabled();
   }
 
-  Future<LocationPermission> checkLocationPermission() async {
-    return await Geolocator.checkPermission();
-  }
-
-  Future<LocationPermission> requestLocationPermission() async {
-    return await Geolocator.requestPermission();
-  }
-
+  // Get current position
   Future<Position?> getCurrentPosition() async {
     try {
       // Check if location services are enabled
       bool serviceEnabled = await isLocationServiceEnabled();
       if (!serviceEnabled) {
-        return null;
+        throw Exception('Location services are disabled');
       }
 
       // Check permissions
-      LocationPermission permission = await checkLocationPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await requestLocationPermission();
-        if (permission == LocationPermission.denied) {
-          return null;
+      bool hasPermission = await checkPermission();
+      if (!hasPermission) {
+        bool granted = await requestPermission();
+        if (!granted) {
+          throw Exception('Location permission denied');
         }
       }
 
-      if (permission == LocationPermission.deniedForever) {
-        return null;
-      }
-
       // Get current position
-      return await Geolocator.getCurrentPosition(
+      Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
+        timeLimit: const Duration(seconds: 30),
       );
+
+      return position;
     } catch (e) {
-      return null;
+      throw Exception('Failed to get location: ${e.toString()}');
     }
   }
 
+  // Calculate distance between two points in meters
   double calculateDistance(
     double startLatitude,
     double startLongitude,
@@ -62,14 +66,19 @@ class LocationService {
     );
   }
 
+  // Check if position is within radius of target location
   bool isWithinRadius(
-    double currentLat,
-    double currentLng,
-    double targetLat,
-    double targetLng,
+    Position currentPosition,
+    double targetLatitude,
+    double targetLongitude,
     double radiusInMeters,
   ) {
-    double distance = calculateDistance(currentLat, currentLng, targetLat, targetLng);
+    double distance = calculateDistance(
+      currentPosition.latitude,
+      currentPosition.longitude,
+      targetLatitude,
+      targetLongitude,
+    );
     return distance <= radiusInMeters;
   }
 }

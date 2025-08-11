@@ -226,7 +226,7 @@ class _SplashScreenState extends State<_SplashScreen>
                       ),
                     ),
                     const SizedBox(height: 32),
-                    Text(
+                   const  Text(
                       Constants.appName,
                       style: TextStyle(
                         fontSize: 28,
@@ -243,7 +243,7 @@ class _SplashScreenState extends State<_SplashScreen>
                       ),
                     ),
                     const SizedBox(height: 32),
-                    SizedBox(
+                   const SizedBox(
                       width: 40,
                       height: 40,
                       child: CircularProgressIndicator(
@@ -348,8 +348,6 @@ class _AppNavigationObserver extends NavigatorObserver {
   void _logNavigation(String action, String? routeName) {
     if (routeName != null) {
       print('Navigation [$action]: $routeName');
-      // Here you can add analytics tracking
-      // Analytics.trackNavigation(action, routeName);
     }
   }
 }

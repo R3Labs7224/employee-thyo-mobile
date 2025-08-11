@@ -1,52 +1,48 @@
-import 'package:ems/models/employee.dart';
+// lib/providers/attendance_provider.dart
 import 'package:flutter/material.dart';
 import '../models/attendance.dart';
-import '../services/api_service.dart';
-import '../config/app_config.dart';
+import '../services/attendance_service.dart';
 
 class AttendanceProvider with ChangeNotifier {
-  final ApiService _apiService = ApiService();
+  final AttendanceService _attendanceService = AttendanceService();
 
   List<Attendance> _attendanceList = [];
-  AttendanceSummary? _summary;
-  TodayAttendance? _todayAttendance;
-  Permissions? _permissions;
+  Attendance? _todayAttendance;
   bool _isLoading = false;
   String? _error;
 
   // Getters
   List<Attendance> get attendanceList => _attendanceList;
-  AttendanceSummary? get summary => _summary;
-  TodayAttendance? get todayAttendance => _todayAttendance;
-  Permissions? get permissions => _permissions;
+  Attendance? get todayAttendance => _todayAttendance;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  
+  bool get canCheckIn => _attendanceService.canCheckIn(_todayAttendance);
+  bool get canCheckOut => _attendanceService.canCheckOut(_todayAttendance);
 
-  Future<void> fetchAttendance({String? month, int limit = 30}) async {
+  // Permissions getter (for backward compatibility)
+  Map<String, bool> get permissions => {
+    'canCheckIn': canCheckIn,
+    'canCheckOut': canCheckOut,
+    'canViewAttendance': true,
+  };
+
+  // Summary getter (for backward compatibility)
+  Map<String, dynamic> get summary => getMonthlyStats();
+
+  // Fetch attendance history
+  Future<void> fetchAttendance({String? month}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final queryParams = <String, String>{
-        'limit': limit.toString(),
-      };
-      
-      if (month != null) {
-        queryParams['month'] = month;
-      }
-
-      final response = await _apiService.get<AttendanceResponse>(
-        AppConfig.attendanceEndpoint,
-        queryParams: queryParams,
-        fromJson: (data) => AttendanceResponse.fromJson(data),
-      );
+      final response = await _attendanceService.getAttendanceHistory(month: month);
 
       if (response.success && response.data != null) {
-        _attendanceList = response.data!.attendance;
-        _summary = response.data!.summary;
-        _todayAttendance = response.data!.today;
-        _permissions = response.data!.permissions;
+        _attendanceList = response.data!;
+        _todayAttendance = await _attendanceService.getTodayAttendance(_attendanceList);
+        _error = null;
       } else {
         _error = response.message;
       }
@@ -58,26 +54,23 @@ class AttendanceProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Check in
   Future<bool> checkIn({
     required int siteId,
     required double latitude,
     required double longitude,
-    required String selfieBase64,
+    String? selfieBase64,
   }) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _apiService.post(
-        AppConfig.attendanceEndpoint,
-        {
-          'action': 'check_in',
-          'site_id': siteId,
-          'latitude': latitude,
-          'longitude': longitude,
-          'selfie': selfieBase64,
-        },
+      final response = await _attendanceService.checkIn(
+        siteId: siteId,
+        latitude: latitude,
+        longitude: longitude,
+        selfieBase64: selfieBase64,
       );
 
       if (response.success) {
@@ -100,26 +93,23 @@ class AttendanceProvider with ChangeNotifier {
     }
   }
 
+  // Check out
   Future<bool> checkOut({
     required int siteId,
     required double latitude,
     required double longitude,
-    required String selfieBase64,
+    String? selfieBase64,
   }) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _apiService.post(
-        AppConfig.attendanceEndpoint,
-        {
-          'action': 'check_out',
-          'site_id': siteId,
-          'latitude': latitude,
-          'longitude': longitude,
-          'selfie': selfieBase64,
-        },
+      final response = await _attendanceService.checkOut(
+        siteId: siteId,
+        latitude: latitude,
+        longitude: longitude,
+        selfieBase64: selfieBase64,
       );
 
       if (response.success) {
@@ -142,7 +132,43 @@ class AttendanceProvider with ChangeNotifier {
     }
   }
 
+  // Get attendance for specific date
+  Attendance? getAttendanceForDate(String date) {
+    try {
+      return _attendanceList.firstWhere((attendance) => attendance.date == date);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Get monthly statistics
+  Map<String, int> getMonthlyStats() {
+    final approved = _attendanceList.where((a) => a.isApproved).length;
+    final pending = _attendanceList.where((a) => a.isPending).length;
+    final rejected = _attendanceList.where((a) => a.isRejected).length;
+
+    return {
+      'total': _attendanceList.length,
+      'approved': approved,
+      'pending': pending,
+      'rejected': rejected,
+      'totalDays': _attendanceList.length,
+      'approvedDays': approved,
+      'pendingDays': pending,
+      'rejectedDays': rejected,
+    };
+  }
+
+  // Clear error
   void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
+  // Reset data
+  void reset() {
+    _attendanceList.clear();
+    _todayAttendance = null;
     _error = null;
     notifyListeners();
   }
