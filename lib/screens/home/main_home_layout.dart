@@ -22,46 +22,7 @@ class _MainHomeLayoutState extends State<MainHomeLayout> {
     // Add other main screens here if needed
   ];
 
-  final List<BottomNavigationBarItem> _navItems = [
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.dashboard),
-      label: 'Dashboard',
-    ),
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.person),
-      label: 'Profile',
-    ),
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.access_time),
-      label: 'Attendance',
-    ),
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.task),
-      label: 'Tasks',
-    ),
-  ];
 
-  void _onNavItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    // Navigate to different screens based on index
-    switch (index) {
-      case 0:
-        // Stay on dashboard
-        break;
-      case 1:
-        Navigator.pushNamed(context, AppRoutes.profile);
-        break;
-      case 2:
-        Navigator.pushNamed(context, AppRoutes.attendance);
-        break;
-      case 3:
-        Navigator.pushNamed(context, AppRoutes.tasks);
-        break;
-    }
-  }
 
   void _showLogoutDialog() {
     showDialog(
@@ -129,14 +90,7 @@ class _MainHomeLayoutState extends State<MainHomeLayout> {
         index: _selectedIndex,
         children: _screens,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: _onNavItemTapped,
-        selectedItemColor: AppTheme.primaryColor,
-        unselectedItemColor: Colors.grey,
-        items: _navItems,
-      ),
+  
     );
   }
 
