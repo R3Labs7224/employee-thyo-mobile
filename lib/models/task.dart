@@ -1,4 +1,43 @@
 // lib/models/task.dart
+// Helper functions for safe type conversion
+int? _safeIntNullable(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    return parsed;
+  }
+  if (value is double) return value.toInt();
+  return null;
+}
+
+int _safeInt(dynamic value) {
+  if (value == null) return 0;
+  if (value is int) return value;
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    return parsed ?? 0;
+  }
+  if (value is double) return value.toInt();
+  return 0;
+}
+
+double? _safeDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is String) {
+    final parsed = double.tryParse(value);
+    return parsed;
+  }
+  return null;
+}
+
+String _safeString(dynamic value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
 class Task {
   final int? id;
   final int? employeeId;
@@ -36,21 +75,21 @@ class Task {
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
-      id: json['id'],
-      employeeId: json['employee_id'],
-      attendanceId: json['attendance_id'],
-      siteId: json['site_id'],
-      title: json['title'] ?? '',
-      description: json['description'],
-      status: json['status'] ?? 'active',
-      startTime: json['start_time'],
-      endTime: json['end_time'],
-      latitude: json['latitude']?.toDouble(),
-      longitude: json['longitude']?.toDouble(),
-      taskImage: json['task_image'],
-      siteName: json['site_name'],
-      attendanceDate: json['attendance_date'],
-      createdAt: json['created_at'],
+      id: _safeIntNullable(json['id']), // Fixed: Use safe conversion
+      employeeId: _safeIntNullable(json['employee_id']), // Fixed
+      attendanceId: _safeIntNullable(json['attendance_id']), // Fixed
+      siteId: _safeIntNullable(json['site_id']), // Fixed
+      title: _safeString(json['title']),
+      description: json['description']?.toString(),
+      status: _safeString(json['status']).isNotEmpty ? _safeString(json['status']) : 'active',
+      startTime: json['start_time']?.toString(),
+      endTime: json['end_time']?.toString(),
+      latitude: _safeDouble(json['latitude']),
+      longitude: _safeDouble(json['longitude']),
+      taskImage: json['task_image']?.toString(),
+      siteName: json['site_name']?.toString(),
+      attendanceDate: json['attendance_date']?.toString(),
+      createdAt: json['created_at']?.toString(),
     );
   }
 
@@ -99,7 +138,9 @@ class TaskResponse {
           .toList(),
       summary: TaskSummary.fromJson(json['summary']),
       canCreateTask: json['can_create_task'] ?? false,
-      attendanceStatus: json['attendance_status'] ?? 'not_checked_in',
+      attendanceStatus: _safeString(json['attendance_status']).isNotEmpty 
+          ? _safeString(json['attendance_status']) 
+          : 'not_checked_in',
     );
   }
 }
@@ -119,10 +160,10 @@ class TaskSummary {
 
   factory TaskSummary.fromJson(Map<String, dynamic> json) {
     return TaskSummary(
-      totalTasks: json['total_tasks'] ?? 0,
-      completedTasks: json['completed_tasks'] ?? 0,
-      activeTasks: json['active_tasks'] ?? 0,
-      cancelledTasks: json['cancelled_tasks'] ?? 0,
+      totalTasks: _safeInt(json['total_tasks']),
+      completedTasks: _safeInt(json['completed_tasks']),
+      activeTasks: _safeInt(json['active_tasks']),
+      cancelledTasks: _safeInt(json['cancelled_tasks']),
     );
   }
 }
@@ -195,12 +236,12 @@ class TaskActionResponse {
 
   factory TaskActionResponse.fromJson(Map<String, dynamic> json) {
     return TaskActionResponse(
-      taskId: json['task_id'],
-      title: json['title'],
-      siteName: json['site_name'],
-      startTime: json['start_time'],
-      endTime: json['end_time'],
-      durationMinutes: json['duration_minutes'],
+      taskId: _safeInt(json['task_id']),
+      title: json['title']?.toString(),
+      siteName: json['site_name']?.toString(),
+      startTime: json['start_time']?.toString(),
+      endTime: json['end_time']?.toString(),
+      durationMinutes: _safeIntNullable(json['duration_minutes']),
     );
   }
 }

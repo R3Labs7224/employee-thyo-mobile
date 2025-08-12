@@ -1,7 +1,7 @@
 // lib/models/petty_cash.dart
 class PettyCashRequest {
-  final int? id;
-  final int? employeeId;
+  final String? id;
+  final String? employeeId;
   final double amount;
   final String reason;
   final String requestDate;
@@ -138,24 +138,18 @@ class CreatePettyCashRequest {
 
 // Petty cash request response model
 class PettyCashRequestResponse {
-  final int requestId;
-  final double amount;
-  final String requestDate;
-  final String status;
+  final String requestId;
+  
 
   PettyCashRequestResponse({
     required this.requestId,
-    required this.amount,
-    required this.requestDate,
-    required this.status,
+    
   });
 
   factory PettyCashRequestResponse.fromJson(Map<String, dynamic> json) {
     return PettyCashRequestResponse(
       requestId: json['request_id'],
-      amount: (json['amount'] ?? 0).toDouble(),
-      requestDate: json['request_date'],
-      status: json['status'] ?? 'pending',
+    
     );
   }
 }

@@ -1,4 +1,32 @@
 // lib/models/site.dart
+// Helper functions for safe type conversion
+int _safeInt(dynamic value) {
+  if (value == null) return 0;
+  if (value is int) return value;
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    return parsed ?? 0;
+  }
+  if (value is double) return value.toInt();
+  return 0;
+}
+
+double? _safeDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is String) {
+    final parsed = double.tryParse(value);
+    return parsed;
+  }
+  return null;
+}
+
+String _safeString(dynamic value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
 class Site {
   final int id;
   final String name;
@@ -16,11 +44,11 @@ class Site {
 
   factory Site.fromJson(Map<String, dynamic> json) {
     return Site(
-      id: json['id'],
-      name: json['name'] ?? '',
-      address: json['address'],
-      latitude: json['latitude']?.toDouble(),
-      longitude: json['longitude']?.toDouble(),
+      id: _safeInt(json['id']), // Fixed: Use safe integer conversion
+      name: _safeString(json['name']),
+      address: json['address']?.toString(), // Safe string conversion
+      latitude: _safeDouble(json['latitude']), // Safe double conversion
+      longitude: _safeDouble(json['longitude']), // Safe double conversion
     );
   }
 
@@ -44,6 +72,21 @@ class Site {
 
   // Check if coordinates are available
   bool get hasCoordinates => latitude != null && longitude != null;
+  
+  @override
+  String toString() {
+    return 'Site(id: $id, name: $name, address: $address, lat: $latitude, lng: $longitude)';
+  }
+  
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Site &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+  
+  @override
+  int get hashCode => id.hashCode;
 }
 
 class SitesResponse {
@@ -60,7 +103,12 @@ class SitesResponse {
       sites: (json['sites'] as List)
           .map((item) => Site.fromJson(item))
           .toList(),
-      totalCount: json['total_count'] ?? 0,
+      totalCount: _safeInt(json['total_count']), // Fixed: Use safe integer conversion
     );
+  }
+  
+  @override
+  String toString() {
+    return 'SitesResponse(sites: ${sites.length}, totalCount: $totalCount)';
   }
 }

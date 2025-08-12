@@ -1,4 +1,43 @@
 // lib/models/attendance.dart
+// Helper functions for safe type conversion
+int? _safeIntNullable(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    return parsed;
+  }
+  if (value is double) return value.toInt();
+  return null;
+}
+
+int _safeInt(dynamic value) {
+  if (value == null) return 0;
+  if (value is int) return value;
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    return parsed ?? 0;
+  }
+  if (value is double) return value.toInt();
+  return 0;
+}
+
+double? _safeDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is String) {
+    final parsed = double.tryParse(value);
+    return parsed;
+  }
+  return null;
+}
+
+String _safeString(dynamic value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
 class Attendance {
   final int? id;
   final int? employeeId;
@@ -36,21 +75,21 @@ class Attendance {
 
   factory Attendance.fromJson(Map<String, dynamic> json) {
     return Attendance(
-      id: json['id'],
-      employeeId: json['employee_id'],
-      siteId: json['site_id'],
-      date: json['date'],
-      checkInTime: json['check_in_time'],
-      checkOutTime: json['check_out_time'],
-      checkInLatitude: json['check_in_latitude']?.toDouble(),
-      checkInLongitude: json['check_in_longitude']?.toDouble(),
-      checkOutLatitude: json['check_out_latitude']?.toDouble(),
-      checkOutLongitude: json['check_out_longitude']?.toDouble(),
-      checkInSelfie: json['check_in_selfie'],
-      workingHours: json['working_hours']?.toDouble(),
-      status: json['status'] ?? 'pending',
-      siteName: json['site_name'],
-      createdAt: json['created_at'],
+      id: _safeIntNullable(json['id']), // Fixed: Use safe conversion
+      employeeId: _safeIntNullable(json['employee_id']), // Fixed
+      siteId: _safeIntNullable(json['site_id']), // Fixed
+      date: _safeString(json['date']),
+      checkInTime: json['check_in_time']?.toString(),
+      checkOutTime: json['check_out_time']?.toString(),
+      checkInLatitude: _safeDouble(json['check_in_latitude']),
+      checkInLongitude: _safeDouble(json['check_in_longitude']),
+      checkOutLatitude: _safeDouble(json['check_out_latitude']),
+      checkOutLongitude: _safeDouble(json['check_out_longitude']),
+      checkInSelfie: json['check_in_selfie']?.toString(),
+      workingHours: _safeDouble(json['working_hours']),
+      status: _safeString(json['status']).isNotEmpty ? _safeString(json['status']) : 'pending',
+      siteName: json['site_name']?.toString(),
+      createdAt: json['created_at']?.toString(),
     );
   }
 
@@ -126,11 +165,11 @@ class AttendanceActionResponse {
 
   factory AttendanceActionResponse.fromJson(Map<String, dynamic> json) {
     return AttendanceActionResponse(
-      attendanceId: json['attendance_id'],
-      date: json['date'],
-      checkInTime: json['check_in_time'],
-      checkOutTime: json['check_out_time'],
-      siteName: json['site_name'],
+      attendanceId: _safeInt(json['attendance_id']), // Fixed: Use safe conversion
+      date: _safeString(json['date']),
+      checkInTime: json['check_in_time']?.toString(),
+      checkOutTime: json['check_out_time']?.toString(),
+      siteName: _safeString(json['site_name']),
     );
   }
 }
@@ -155,12 +194,12 @@ class AttendanceSummary {
 
   factory AttendanceSummary.fromJson(Map<String, dynamic> json) {
     return AttendanceSummary(
-      totalDays: json['total_days'] ?? 0,
-      approvedDays: json['approved_days'] ?? 0,
-      pendingDays: json['pending_days'] ?? 0,
-      rejectedDays: json['rejected_days'] ?? 0,
-      totalHours: (json['total_hours'] ?? 0).toDouble(),
-      averageHours: (json['average_hours'] ?? 0).toDouble(),
+      totalDays: _safeInt(json['total_days']),
+      approvedDays: _safeInt(json['approved_days']),
+      pendingDays: _safeInt(json['pending_days']),
+      rejectedDays: _safeInt(json['rejected_days']),
+      totalHours: _safeDouble(json['total_hours']) ?? 0.0,
+      averageHours: _safeDouble(json['average_hours']) ?? 0.0,
     );
   }
 

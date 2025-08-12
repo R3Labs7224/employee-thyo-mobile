@@ -29,7 +29,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
   
   Position? _currentPosition;
   Site? _selectedSite;
-  List<Site> _nearbySites = [];
+  List<Site> _allSites = []; // Changed: Now storing all sites instead of just nearby
   File? _selfieImage;
   String? _selfieBase64;
   bool _isLoading = false;
@@ -65,22 +65,21 @@ class _CheckInScreenState extends State<CheckInScreen> {
       final position = await _locationService.getCurrentPosition();
       if (position != null) {
         _currentPosition = position;
+      }
 
-        // Fetch sites and find nearby ones
-        if (!mounted) return;
+      // Fetch all available sites
+      if (mounted) {
         final siteProvider = Provider.of<SiteProvider>(context, listen: false);
         await siteProvider.fetchSites();
+        
+        // Changed: Get all sites instead of filtering by radius
+        _allSites = siteProvider.sites;
 
-        _nearbySites = siteProvider.getSitesWithinRadius(
-          position.latitude,
-          position.longitude,
-        );
-
-        // Auto-select nearest site if available
-        if (_nearbySites.isNotEmpty) {
+        // Auto-select nearest site if available and location is available
+        if (_allSites.isNotEmpty && _currentPosition != null) {
           _selectedSite = siteProvider.getNearestSite(
-            position.latitude,
-            position.longitude,
+            _currentPosition!.latitude,
+            _currentPosition!.longitude,
           );
         }
       }
@@ -97,33 +96,55 @@ class _CheckInScreenState extends State<CheckInScreen> {
     try {
       final XFile? image = await _cameraService.takePicture();
       if (image != null) {
-        final imageFile = File(image.path);
-        final bytes = await imageFile.readAsBytes();
-        final base64String = base64Encode(bytes);
+        final File imageFile = File(image.path);
+        final List<int> imageBytes = await imageFile.readAsBytes();
+        final String base64Image = base64Encode(imageBytes);
 
         setState(() {
           _selfieImage = imageFile;
-          _selfieBase64 = 'data:image/jpeg;base64,$base64String';
+          _selfieBase64 = base64Image;
         });
       }
     } catch (e) {
-      _showErrorSnackBar('Failed to take selfie: ${e.toString()}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to capture image: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  Future<void> _checkIn() async {
+  Future<void> _submitCheckIn() async {
     if (_selectedSite == null) {
-      _showErrorSnackBar('Please select a site');
-      return;
-    }
-
-    if (_currentPosition == null) {
-      _showErrorSnackBar('Location not available');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a site'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
     if (_selfieBase64 == null) {
-      _showErrorSnackBar('Please take a selfie');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please take a selfie'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_currentPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location not available'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -141,18 +162,31 @@ class _CheckInScreenState extends State<CheckInScreen> {
         selfieBase64: _selfieBase64,
       );
 
-      if (success) {
-        if (mounted) {
-          _showSuccessSnackBar('Check-in successful!');
-          Navigator.pop(context);
-        }
-      } else {
-        if (mounted) {
-          _showErrorSnackBar(attendanceProvider.error ?? 'Check-in failed');
-        }
+      if (success && mounted) {
+        Navigator.of(context).pop(true); // Return success
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Check-in successful!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(attendanceProvider.error ?? 'Check-in failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      _showErrorSnackBar('Check-in failed: ${e.toString()}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
 
     setState(() {
@@ -160,40 +194,19 @@ class _CheckInScreenState extends State<CheckInScreen> {
     });
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: CustomAppBar(
-        title: 'Check In',
-        showBackButton: true,
-      ),
+      appBar: const CustomAppBar(title: 'Check In'),
       body: _isLoading
           ? const LoadingWidget()
           : _error != null
-              ? _buildErrorWidget()
-              : _buildCheckInForm(),
+              ? _buildErrorView()
+              : _buildMainContent(),
     );
   }
 
-  Widget _buildErrorWidget() {
+  Widget _buildErrorView() {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -207,29 +220,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Check-In Error',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Colors.red[700],
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
               _error!,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey[600],
-              ),
               textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 24),
-            ElevatedButton.icon(
+            CustomButton(
+              text: 'Retry',
               onPressed: _initializeCheckIn,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                foregroundColor: Colors.white,
-              ),
             ),
           ],
         ),
@@ -237,76 +235,19 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
   }
 
-  Widget _buildCheckInForm() {
+  Widget _buildMainContent() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildLocationSection(),
-          const SizedBox(height: 24),
           _buildSiteSelection(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          _buildLocationInfo(),
+          const SizedBox(height: 16),
           _buildSelfieSection(),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
           _buildCheckInButton(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildLocationSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.location_on, color: AppTheme.primaryColor),
-                const SizedBox(width: 8),
-                Text(
-                  'Current Location',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_currentPosition != null) ...[
-              Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.green, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Lat: ${_currentPosition!.latitude.toStringAsFixed(6)}, '
-                      'Lng: ${_currentPosition!.longitude.toStringAsFixed(6)}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Accuracy: ${_currentPosition!.accuracy.toStringAsFixed(1)}m',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-              ),
-            ] else ...[
-              Row(
-                children: [
-                  Icon(Icons.error, color: Colors.red, size: 20),
-                  const SizedBox(width: 8),
-                  const Text('Location not available'),
-                ],
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -331,75 +272,163 @@ class _CheckInScreenState extends State<CheckInScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            if (_nearbySites.isEmpty) ...[
+            // Changed: Show all sites or informative message
+            if (_allSites.isEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.orange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
-                    const Icon(Icons.warning, color: Colors.orange),
-                    const SizedBox(width: 8),
+                    Icon(Icons.warning, color: Colors.orange),
+                    SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'No sites available within ${AppConfig.locationRadius}m radius',
-                        style: TextStyle(color: Colors.orange[700]),
+                        'No sites available. Please contact administrator.',
+                        style: TextStyle(color: Colors.orange),
                       ),
                     ),
                   ],
                 ),
               ),
             ] else ...[
+              // Changed: Show dropdown with all sites
               DropdownButtonFormField<Site>(
                 value: _selectedSite,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   labelText: 'Choose Site',
                 ),
-                items: _nearbySites.map((site) {
-                  final distance = _currentPosition != null
+                items: _allSites.map((site) {
+                  // Calculate distance if location is available
+                  final distance = _currentPosition != null && site.hasCoordinates
                       ? Provider.of<SiteProvider>(context, listen: false)
                           .calculateDistanceToSite(
                             site,
                             _currentPosition!.latitude,
                             _currentPosition!.longitude,
                           )
-                      : 0.0;
+                      : null;
 
                   return DropdownMenuItem<Site>(
                     value: site,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(site.name),
                         Text(
-                          '${distance.toStringAsFixed(0)}m away',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
+                          site.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        
                       ],
                     ),
                   );
-                }).toList(                ),
-                onChanged: (site) {
+                }).toList(),
+                onChanged: (Site? newSite) {
                   setState(() {
-                    _selectedSite = site;
+                    _selectedSite = newSite;
                   });
                 },
+                isExpanded: true,
+                menuMaxHeight: 300, // Limit dropdown height for better UX
               ),
-              if (_selectedSite != null) ...[
+              
+              // Show distance warning if user is far from selected site
+              if (_selectedSite != null && 
+                  _currentPosition != null && 
+                  _selectedSite!.hasCoordinates) ...[
                 const SizedBox(height: 8),
+                Builder(
+                  builder: (context) {
+                    final distance = Provider.of<SiteProvider>(context, listen: false)
+                        .calculateDistanceToSite(
+                          _selectedSite!,
+                          _currentPosition!.latitude,
+                          _currentPosition!.longitude,
+                        );
+                    
+                    if (distance > AppConfig.locationRadius) {
+                      return Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning, color: Colors.orange, size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'You are ${(distance / 1000).toStringAsFixed(1)} km away from this site',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationInfo() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.location_on, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
                 Text(
-                  _selectedSite!.address ?? 'No address available',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[600],
+                  'Location',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            if (_currentPosition != null) ...[
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Location detected: ${_currentPosition!.latitude.toStringAsFixed(6)}, ${_currentPosition!.longitude.toStringAsFixed(6)}',
+                      style: const TextStyle(color: Colors.green),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const Row(
+                children: [
+                  Icon(Icons.error, color: Colors.orange, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Location not available',
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                ],
+              ),
             ],
           ],
         ),
@@ -419,7 +448,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 Icon(Icons.camera_alt, color: AppTheme.primaryColor),
                 const SizedBox(width: 8),
                 Text(
-                  'Take Selfie',
+                  'Selfie',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -444,7 +473,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 children: [
                   const Icon(Icons.check_circle, color: Colors.green, size: 20),
                   const SizedBox(width: 8),
-                  const Text('Selfie captured'),
+                  const Text(
+                    'Selfie captured',
+                    style: TextStyle(color: Colors.green),
+                  ),
                   const Spacer(),
                   TextButton(
                     onPressed: _takeSelfie,
@@ -453,32 +485,24 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 ],
               ),
             ] else ...[
-              InkWell(
-                onTap: _takeSelfie,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!, width: 2, style: BorderStyle.solid),
-                    borderRadius: BorderRadius.circular(8),
-                    color: Colors.grey[50],
-                  ),
-                  child: Column(
+              Container(
+                height: 120,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: InkWell(
+                  onTap: _takeSelfie,
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.camera_alt,
-                        size: 48,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 8),
+                      Icon(Icons.camera_alt, size: 48, color: Colors.grey),
+                      SizedBox(height: 8),
                       Text(
                         'Tap to take selfie',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 16,
-                        ),
+                        style: TextStyle(color: Colors.grey),
                       ),
                     ],
                   ),
@@ -492,18 +516,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
   }
 
   Widget _buildCheckInButton() {
-    final canCheckIn = _selectedSite != null &&
-        _currentPosition != null &&
-        _selfieBase64 != null &&
-        !_isLoading;
+    final bool canCheckIn = _selectedSite != null && 
+                           _selfieBase64 != null && 
+                           _currentPosition != null;
 
     return SizedBox(
       width: double.infinity,
       child: CustomButton(
         text: 'Check In',
-        onPressed: canCheckIn ? _checkIn : null,
+        onPressed: canCheckIn ? _submitCheckIn : null,
         isLoading: _isLoading,
-        backgroundColor: AppTheme.primaryColor,
       ),
     );
   }
