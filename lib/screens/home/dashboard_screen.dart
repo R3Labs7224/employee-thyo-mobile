@@ -1,4 +1,4 @@
-// lib/screens/home/dashboard_screen.dart
+// lib/screens/home/dashboard_screen.dart (Simplified for MainHomeLayout)
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -8,9 +8,7 @@ import '../../providers/petty_cash_provider.dart';
 import '../../providers/employee_provider.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
-import '../../widgets/common/custom_app_bar.dart';
 import '../../widgets/common/loading_widget.dart';
-
 import '../../utils/helpers.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -21,96 +19,219 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  bool _isInitialized = false;
+
   @override
   void initState() {
     super.initState();
-    _initializeDashboard();
+    // Use addPostFrameCallback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeDashboard();
+    });
   }
 
   Future<void> _initializeDashboard() async {
-    final employeeProvider = Provider.of<EmployeeProvider>(context, listen: false);
-    final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
-    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    final pettyCashProvider = Provider.of<PettyCashProvider>(context, listen: false);
+    if (!mounted || _isInitialized) return;
+    
+    try {
+      final employeeProvider = Provider.of<EmployeeProvider>(context, listen: false);
+      final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      final pettyCashProvider = Provider.of<PettyCashProvider>(context, listen: false);
 
-    // Fetch all dashboard data
-    await Future.wait([
-      employeeProvider.fetchProfile(),
-      attendanceProvider.fetchAttendance(),
-      taskProvider.fetchTasks(),
-      pettyCashProvider.fetchPettyCashRequests(),
-    ]);
+      // Initialize providers if needed
+      await Future.wait([
+        employeeProvider.initializeIfNeeded(),
+        attendanceProvider.initializeIfNeeded(),
+        taskProvider.initializeIfNeeded(),
+        pettyCashProvider.initializeIfNeeded(),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing dashboard: $e');
+      if (mounted) {
+        setState(() {
+          _isInitialized = true; // Set to true even on error to show error UI
+        });
+      }
+    }
   }
 
   Future<void> _refreshDashboard() async {
-    await _initializeDashboard();
+    if (!mounted) return;
+
+    try {
+      final employeeProvider = Provider.of<EmployeeProvider>(context, listen: false);
+      final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      final pettyCashProvider = Provider.of<PettyCashProvider>(context, listen: false);
+
+      await Future.wait([
+        employeeProvider.refresh(),
+        attendanceProvider.refresh(),
+        taskProvider.refresh(),
+        pettyCashProvider.refresh(),
+      ]);
+    } catch (e) {
+      debugPrint('Error refreshing dashboard: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to refresh: ${e.toString()}')),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: CustomAppBar(
-        title: 'Dashboard',
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshDashboard,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _showLogoutDialog(context),
-          ),
-        ],
-      ),
-      body: Consumer4<EmployeeProvider, AttendanceProvider, TaskProvider, PettyCashProvider>(
-        builder: (context, employeeProvider, attendanceProvider, taskProvider, pettyCashProvider, child) {
-          if (employeeProvider.isLoading || 
-              attendanceProvider.isLoading || 
-              taskProvider.isLoading || 
-              pettyCashProvider.isLoading) {
-            return const LoadingWidget();
-          }
+    if (!_isInitialized) {
+      return const LoadingWidget();
+    }
 
-          if (employeeProvider.error != null ||
-              attendanceProvider.error != null ||
-              taskProvider.error != null ||
-              pettyCashProvider.error != null) {
-            return _buildErrorWidget();
-          }
+    return Consumer4<EmployeeProvider, AttendanceProvider, TaskProvider, PettyCashProvider>(
+      builder: (context, employeeProvider, attendanceProvider, taskProvider, pettyCashProvider, child) {
+        // Show loading if any provider is loading
+        final isAnyLoading = employeeProvider.isLoading || 
+                            attendanceProvider.isLoading || 
+                            taskProvider.isLoading || 
+                            pettyCashProvider.isLoading;
 
-          return RefreshIndicator(
-            onRefresh: _refreshDashboard,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildWelcomeCard(employeeProvider),
-                  const SizedBox(height: 16),
-                  _buildQuickActions(context, attendanceProvider),
-                  const SizedBox(height: 16),
-                  _buildStatsGrid(attendanceProvider, taskProvider, pettyCashProvider),
-                  const SizedBox(height: 16),
-                  _buildTodaySection(attendanceProvider, taskProvider),
-                  const SizedBox(height: 16),
-                  _buildQuickLinks(context),
-                ],
+        // Check for errors
+        final hasErrors = employeeProvider.error != null ||
+                         attendanceProvider.error != null ||
+                         taskProvider.error != null ||
+                         pettyCashProvider.error != null;
+
+        if (isAnyLoading) {
+          return const LoadingWidget();
+        }
+
+        if (hasErrors) {
+          return _buildErrorWidget([
+            employeeProvider.error,
+            attendanceProvider.error,
+            taskProvider.error,
+            pettyCashProvider.error,
+          ].where((error) => error != null).toList());
+        }
+
+        return RefreshIndicator(
+          onRefresh: _refreshDashboard,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildWelcomeCard(employeeProvider),
+                const SizedBox(height: 16),
+                _buildQuickActions(context, attendanceProvider),
+                const SizedBox(height: 16),
+                _buildStatsGrid(attendanceProvider, taskProvider, pettyCashProvider),
+                const SizedBox(height: 16),
+                _buildTodaySection(attendanceProvider, taskProvider),
+                const SizedBox(height: 16),
+                _buildQuickLinks(context),
+                const SizedBox(height: 80), // Add bottom padding for navigation
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildErrorWidget(List<String?> errors) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Failed to load dashboard data',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
             ),
-          );
-        },
+            const SizedBox(height: 8),
+            if (errors.isNotEmpty)
+              Text(
+                errors.first!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey),
+              ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _refreshDashboard,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildWelcomeCard(EmployeeProvider employeeProvider) {
     final employee = employeeProvider.employee;
-    if (employee == null) return const SizedBox();
+    if (employee == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: Colors.grey[400],
+                child: const Icon(Icons.person, color: Colors.white, size: 30),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Welcome!'),
+                    Text('Employee data not available'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Card(
-      child: Padding(
+      elevation: 4,
+      child: Container(
         padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.primaryColor.withOpacity(0.1),
+              AppTheme.primaryColor.withOpacity(0.05),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
         child: Row(
           children: [
             CircleAvatar(
@@ -158,7 +279,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color: Colors.grey[600],
                 ),
                 Text(
-                  employee.departmentName ?? 'N/A',
+                  employee.departmentName ?? 'No Dept',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -170,10 +291,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildQuickActions(BuildContext context, AttendanceProvider attendanceProvider) {
-    final todayAttendance = attendanceProvider.todayAttendance;
-    final canCheckIn = attendanceProvider.canCheckIn;
-    final canCheckOut = attendanceProvider.canCheckOut;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -182,7 +299,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Text(
               'Quick Actions',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -190,72 +307,99 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Row(
               children: [
                 Expanded(
-                  child: _buildActionButton(
-                    context: context,
-                    icon: Icons.login,
-                    label: 'Check In',
-                    color: Colors.green,
-                    enabled: canCheckIn,
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.checkIn),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, AppRoutes.attendance);
+                    },
+                    icon: const Icon(Icons.access_time),
+                    label: const Text('Attendance'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
-                  child: _buildActionButton(
-                    context: context,
-                    icon: Icons.logout,
-                    label: 'Check Out',
-                    color: Colors.orange,
-                    enabled: canCheckOut,
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.checkOut),
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.pushNamed(context, AppRoutes.tasks),
+                    icon: const Icon(Icons.add_task),
+                    label: const Text('Tasks'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ),
               ],
             ),
-            if (todayAttendance != null) ...[
-              const SizedBox(height: 16),
-              _buildTodayStatus(todayAttendance),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildActionButton({
-    required BuildContext context,
-    required IconData icon,
-    required String label,
-    required Color color,
-    required bool enabled,
-    required VoidCallback? onTap,
-  }) {
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-        decoration: BoxDecoration(
-          color: enabled ? color.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: enabled ? color : Colors.grey,
-            width: 1,
-          ),
+  Widget _buildStatsGrid(AttendanceProvider attendanceProvider, TaskProvider taskProvider, PettyCashProvider pettyCashProvider) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 16,
+      children: [
+        _buildStatCard(
+          'Present Days',
+          '${attendanceProvider.todayAttendance ?? 0}',
+          Icons.calendar_today,
+          Colors.green,
         ),
+        _buildStatCard(
+          'Active Tasks',
+          '${taskProvider.activeTasks?.length ?? 0}',
+          Icons.task_alt,
+          Colors.blue,
+        ),
+        _buildStatCard(
+          'Pending Requests',
+          '${pettyCashProvider.pendingRequests?.length ?? 0}',
+          Icons.pending,
+          Colors.orange,
+        ),
+        _buildStatCard(
+          'Working Hours',
+          '${attendanceProvider.attendanceList.first ?? '0.0'}h',
+          Icons.schedule,
+          Colors.purple,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
-              color: enabled ? color : Colors.grey,
               size: 32,
+              color: color,
             ),
             const SizedBox(height: 8),
             Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: enabled ? color : Colors.grey,
-                fontWeight: FontWeight.w600,
+              value,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
               ),
               textAlign: TextAlign.center,
             ),
@@ -265,190 +409,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildTodayStatus(attendance) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.schedule, color: Colors.blue[700]),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Today\'s Status',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.blue[700],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    if (attendance.checkInTime != null) ...[
-                      Text('In: ${attendance.checkInTime}'),
-                      if (attendance.checkOutTime != null) ...[
-                        const SizedBox(width: 16),
-                        Text('Out: ${attendance.checkOutTime}'),
-                      ],
-                    ] else
-                      const Text('Not checked in yet'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: _getStatusColor(attendance.status),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              attendance.status?.toUpperCase() ?? 'PENDING',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsGrid(
-    AttendanceProvider attendanceProvider,
-    TaskProvider taskProvider,
-    PettyCashProvider pettyCashProvider,
-  ) {
-    final attendanceStats = attendanceProvider.summary;
-    final taskSummary = taskProvider.summary;
-    final pettyCashSummary = pettyCashProvider.summary;
-
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.5,
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      children: [
-        _buildStatCard(
-          title: 'Attendance',
-          value: '${attendanceStats['approvedDays'] ?? 0}/${attendanceStats['totalDays'] ?? 0}',
-          subtitle: 'This Month',
-          icon: Icons.calendar_today,
-          color: Colors.blue,
-          onTap: () => Navigator.pushNamed(context, AppRoutes.attendance),
-        ),
-        _buildStatCard(
-          title: 'Tasks',
-          value: '${taskSummary?.completedTasks ?? 0}',
-          subtitle: 'Completed',
-          icon: Icons.task_alt,
-          color: Colors.green,
-          onTap: () => Navigator.pushNamed(context, AppRoutes.tasks),
-        ),
-        _buildStatCard(
-          title: 'Petty Cash',
-          value: '\$${pettyCashSummary?.pendingAmount?.toStringAsFixed(0) ?? '0'}',
-          subtitle: 'Pending',
-          icon: Icons.account_balance_wallet,
-          color: Colors.orange,
-          onTap: () => Navigator.pushNamed(context, AppRoutes.pettyCash),
-        ),
-        _buildStatCard(
-          title: 'Salary',
-          value: 'View',
-          subtitle: 'Slips',
-          icon: Icons.payment,
-          color: Colors.purple,
-          onTap: () => Navigator.pushNamed(context, AppRoutes.salary),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Icon(icon, color: color, size: 24),
-                  Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-              Text(
-                '$title • $subtitle',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTodaySection(
-    AttendanceProvider attendanceProvider,
-    TaskProvider taskProvider,
-  ) {
-    final activeTask = taskProvider.activeTask;
-
+  Widget _buildTodaySection(AttendanceProvider attendanceProvider, TaskProvider taskProvider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Today\'s Overview',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 12),
-        if (activeTask != null)
-          Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.orange,
-                child: const Icon(Icons.task, color: Colors.white),
+        const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: attendanceProvider.todayAttendance != null ? Colors.green : Colors.grey,
+              child: Icon(
+                attendanceProvider.todayAttendance != null ? Icons.check : Icons.schedule,
+                color: Colors.white,
               ),
-              title: Text(activeTask.title),
-              subtitle: Text('Active Task • ${activeTask.siteName ?? 'No site'}'),
-              trailing: const Icon(Icons.arrow_forward_ios),
-              onTap: () => Navigator.pushNamed(context, AppRoutes.completeTask),
+            ),
+            title: const Text('Today\'s Attendance'),
+            subtitle: Text(
+              attendanceProvider.todayAttendance?.checkInTime != null
+                  ? 'Checked in at ${attendanceProvider.todayAttendance!.checkInTime}'
+                  : 'Not checked in yet',
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios),
+            onTap: () => Navigator.pushNamed(context, AppRoutes.attendance),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (taskProvider.tasks.isNotEmpty == true)
+          ...taskProvider.tasks!.take(2).map((task) =>
+            Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: task.status == 'completed' ? Colors.green : Colors.orange,
+                  child: Icon(
+                    task.status == 'completed' ? Icons.check : Icons.pending,
+                    color: Colors.white,
+                  ),
+                ),
+                title: Text(task.title),
+                subtitle: Text('Due: ${task.endTime ?? 'No due date'}'),
+                trailing: const Icon(Icons.arrow_forward_ios),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.tasks),
+              ),
             ),
           )
         else
@@ -458,12 +465,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 backgroundColor: Colors.grey[400],
                 child: const Icon(Icons.task, color: Colors.white),
               ),
-              title: const Text('No Active Tasks'),
-              subtitle: const Text('Create a new task to get started'),
+              title: const Text('No Tasks for Today'),
+              subtitle: const Text('Great! You\'re all caught up'),
               trailing: const Icon(Icons.add),
-              onTap: taskProvider.canCreateTask
-                  ? () => Navigator.pushNamed(context, AppRoutes.createTask)
-                  : null,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.tasks),
             ),
           ),
       ],
@@ -476,121 +481,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Text(
           'Quick Links',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 12),
-        Card(
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.person),
-                title: const Text('Profile'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildQuickLinkCard(
+                'View Profile',
+                Icons.person,
+                () => Navigator.pushNamed(context, AppRoutes.profile),
               ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.calendar_today),
-                title: const Text('Attendance History'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () => Navigator.pushNamed(context, AppRoutes.attendance),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildQuickLinkCard(
+                'Salary Info',
+                Icons.attach_money,
+                () => Navigator.pushNamed(context, AppRoutes.salary),
               ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.request_page),
-                title: const Text('Petty Cash Requests'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () => Navigator.pushNamed(context, AppRoutes.pettyCash),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildErrorWidget() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red[300],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Failed to load dashboard data',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Colors.red[700],
+  Widget _buildQuickLinkCard(String title, IconData icon, VoidCallback onTap) {
+    return Card(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                size: 32,
+                color: AppTheme.primaryColor,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Please check your connection and try again',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey[600],
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _refreshDashboard,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    );
-  }
-
-  Color _getStatusColor(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'approved':
-        return Colors.green;
-      case 'pending':
-        return Colors.orange;
-      case 'rejected':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Provider.of<AuthProvider>(context, listen: false).logout();
-                Navigator.pushReplacementNamed(context, AppRoutes.login);
-              },
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
     );
   }
 }

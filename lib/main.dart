@@ -1,6 +1,8 @@
-// lib/main.dart
+// lib/main.dart - Complete updated version
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+// Providers
 import 'providers/auth_provider.dart';
 import 'providers/attendance_provider.dart';
 import 'providers/task_provider.dart';
@@ -8,9 +10,14 @@ import 'providers/petty_cash_provider.dart';
 import 'providers/employee_provider.dart';
 import 'providers/salary_provider.dart';
 import 'providers/site_provider.dart';
+
+// Config
 import 'config/routes.dart';
 import 'config/theme.dart';
-import 'services/storage_service.dart';
+
+// Screens
+import 'screens/auth/login_screen.dart';
+import 'screens/home/main_home_layout.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +45,16 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         home: const AuthWrapper(),
         routes: AppRoutes.routes,
+        onGenerateRoute: (settings) {
+          // Handle unknown routes
+          return MaterialPageRoute(
+            builder: (context) => const Scaffold(
+              body: Center(
+                child: Text('Page not found'),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -64,8 +81,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initializeAuth();
+      
+      // Debug the auth state after initialization
+      authProvider.debugPrintState();
     } catch (e) {
-      debugPrint('App initialization error: $e');
+      debugPrint('❌ App initialization error: $e');
     }
   }
 
@@ -76,6 +96,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         // Show loading screen while initializing
         if (!authProvider.isInitialized) {
           return const Scaffold(
+            backgroundColor: Colors.white,
             body: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -95,6 +116,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         // Show error screen if initialization failed
         if (authProvider.error != null) {
           return Scaffold(
+            backgroundColor: Colors.white,
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -123,6 +145,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     const SizedBox(height: 24),
                     ElevatedButton(
                       onPressed: () => _initializeApp(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                      ),
                       child: const Text('Retry'),
                     ),
                   ],
@@ -134,25 +160,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         // Navigate based on authentication status
         if (authProvider.isAuthenticated) {
-          // User is logged in, go to dashboard
-          return Navigator(
-            onGenerateRoute: (settings) {
-              return MaterialPageRoute(
-                builder: (context) => AppRoutes.routes[AppRoutes.dashboard]!(context),
-                settings: settings,
-              );
-            },
-          );
+          debugPrint('✅ User is authenticated, showing MainHomeLayout');
+          return const MainHomeLayout();
         } else {
-          // User is not logged in, go to login
-          return Navigator(
-            onGenerateRoute: (settings) {
-              return MaterialPageRoute(
-                builder: (context) => AppRoutes.routes[AppRoutes.login]!(context),
-                settings: settings,
-              );
-            },
-          );
+          debugPrint('🔐 User not authenticated, showing LoginScreen');
+          return const LoginScreen();
         }
       },
     );

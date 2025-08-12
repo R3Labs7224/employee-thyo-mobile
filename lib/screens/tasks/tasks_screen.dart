@@ -49,7 +49,7 @@ class _TasksScreenState extends State<TasksScreen>
 
   Future<void> _loadTasks() async {
     final provider = Provider.of<TaskProvider>(context, listen: false);
-    await provider.fetchTasks(date: _selectedDate);
+    await provider.fetchTasks();
   }
 
   @override

@@ -49,7 +49,7 @@ class _PettyCashScreenState extends State<PettyCashScreen>
 
   Future<void> _loadPettyCash() async {
     final provider = Provider.of<PettyCashProvider>(context, listen: false);
-    await provider.fetchPettyCashRequests(month: _selectedMonth);
+    await provider.fetchPettyCashRequests();
   }
 
   @override

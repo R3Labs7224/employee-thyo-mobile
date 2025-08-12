@@ -1,4 +1,4 @@
-// lib/providers/employee_provider.dart
+// lib/providers/employee_provider.dart - Updated with better error handling
 import 'package:flutter/material.dart';
 import '../models/employee.dart';
 import '../services/employee_service.dart';
@@ -11,6 +11,7 @@ class EmployeeProvider with ChangeNotifier {
   PettyCashStats? _pettyCashStats;
   bool _isLoading = false;
   String? _error;
+  bool _isInitialized = false;
 
   // Getters
   Employee? get employee => _employee;
@@ -18,30 +19,50 @@ class EmployeeProvider with ChangeNotifier {
   PettyCashStats? get pettyCashStats => _pettyCashStats;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isInitialized => _isInitialized;
 
   // Fetch employee profile with stats
   Future<void> fetchProfile() async {
-    _isLoading = true;
+    // Prevent multiple simultaneous calls
+    if (_isLoading) return;
+
+    debugPrint('🔧 EmployeeProvider: Starting fetchProfile');
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
       final response = await _employeeService.getProfile();
+      debugPrint('🔧 EmployeeProvider: Service response success: ${response.success}');
 
       if (response.success && response.data != null) {
-        _employee = response.data!.profile;
-        _attendanceStats = response.data!.attendanceStats;
-        _pettyCashStats = response.data!.pettyCashStats;
-        _error = null;
+        debugPrint('🔧 EmployeeProvider: Parsing profile data');
+        
+        try {
+          _employee = response.data!.profile;
+          _attendanceStats = response.data!.attendanceStats;
+          _pettyCashStats = response.data!.pettyCashStats;
+          
+          debugPrint('✅ EmployeeProvider: Profile parsed successfully');
+          debugPrint('   - Employee: ${_employee?.name}');
+          debugPrint('   - Attendance Days: ${_attendanceStats?.totalDays}');
+          debugPrint('   - Petty Cash Requests: ${_pettyCashStats?.totalRequests}');
+          
+          _error = null;
+          _isInitialized = true;
+        } catch (parseError) {
+          debugPrint('❌ EmployeeProvider: Profile parsing error: $parseError');
+          _error = 'Failed to parse profile data: ${parseError.toString()}';
+        }
       } else {
-        _error = response.message;
+        _error = response.message ?? 'Failed to fetch profile';
+        debugPrint('❌ EmployeeProvider: Service error: $_error');
       }
     } catch (e) {
       _error = 'Failed to fetch profile: ${e.toString()}';
+      debugPrint('❌ EmployeeProvider: Network error: $e');
     }
 
-    _isLoading = false;
-    notifyListeners();
+    _setLoading(false);
   }
 
   // Update profile (only email and phone)
@@ -49,9 +70,9 @@ class EmployeeProvider with ChangeNotifier {
     String? email,
     String? phone,
   }) async {
-    _isLoading = true;
+    debugPrint('🔧 EmployeeProvider: Starting updateProfile');
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
       final response = await _employeeService.updateProfile(
@@ -62,38 +83,26 @@ class EmployeeProvider with ChangeNotifier {
       if (response.success) {
         // Update local employee data
         if (_employee != null) {
-          _employee = Employee(
-            id: _employee!.id,
-            employeeCode: _employee!.employeeCode,
-            name: _employee!.name,
+          _employee = _employee!.copyWith(
             email: email ?? _employee!.email,
             phone: phone ?? _employee!.phone,
-            basicSalary: _employee!.basicSalary,
-            dailyWage: _employee!.dailyWage,
-            joiningDate: _employee!.joiningDate,
-            departmentName: _employee!.departmentName,
-            shiftName: _employee!.shiftName,
-            startTime: _employee!.startTime,
-            endTime: _employee!.endTime,
-            siteName: _employee!.siteName,
-            siteAddress: _employee!.siteAddress,
           );
         }
 
         _error = null;
-        _isLoading = false;
-        notifyListeners();
+        _setLoading(false);
+        debugPrint('✅ EmployeeProvider: Profile updated successfully');
         return true;
       } else {
-        _error = response.message;
-        _isLoading = false;
-        notifyListeners();
+        _error = response.message ?? 'Failed to update profile';
+        _setLoading(false);
+        debugPrint('❌ EmployeeProvider: Update failed: $_error');
         return false;
       }
     } catch (e) {
       _error = 'Failed to update profile: ${e.toString()}';
-      _isLoading = false;
-      notifyListeners();
+      debugPrint('❌ EmployeeProvider: Update error: $e');
+      _setLoading(false);
       return false;
     }
   }
@@ -101,7 +110,8 @@ class EmployeeProvider with ChangeNotifier {
   // Update employee data locally (for auth updates)
   void updateEmployee(Employee updatedEmployee) {
     _employee = updatedEmployee;
-    notifyListeners();
+    _safeNotifyListeners();
+    debugPrint('🔧 EmployeeProvider: Employee data updated locally');
   }
 
   // Get employee basic info
@@ -156,7 +166,7 @@ class EmployeeProvider with ChangeNotifier {
   // Clear error
   void clearError() {
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   // Reset data
@@ -165,6 +175,61 @@ class EmployeeProvider with ChangeNotifier {
     _attendanceStats = null;
     _pettyCashStats = null;
     _error = null;
-    notifyListeners();
+    _isLoading = false;
+    _isInitialized = false;
+    _safeNotifyListeners();
+    debugPrint('🔧 EmployeeProvider: Data reset');
+  }
+
+  // Private helper methods
+  void _setLoading(bool loading) {
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _safeNotifyListeners() {
+    // Use addPostFrameCallback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_disposed) {
+        notifyListeners();
+      }
+    });
+  }
+
+  // Initialize data if not already loaded
+  Future<void> initializeIfNeeded() async {
+    if (!_isInitialized && !_isLoading) {
+      debugPrint('🔧 EmployeeProvider: Initializing profile data');
+      await fetchProfile();
+    }
+  }
+
+  // Refresh data
+  Future<void> refresh() async {
+    debugPrint('🔧 EmployeeProvider: Refreshing profile data');
+    _isInitialized = false;
+    await fetchProfile();
+  }
+
+  // Track disposal to prevent notifications after disposal
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  // Debug method to print current state
+  void debugPrintState() {
+    debugPrint('🔧 EmployeeProvider State:');
+    debugPrint('  - Employee: ${_employee?.name ?? 'None'}');
+    debugPrint('  - Loading: $_isLoading');
+    debugPrint('  - Error: $_error');
+    debugPrint('  - Initialized: $_isInitialized');
+    debugPrint('  - Attendance Days: ${_attendanceStats?.totalDays ?? 'N/A'}');
+    debugPrint('  - Petty Cash Requests: ${_pettyCashStats?.totalRequests ?? 'N/A'}');
   }
 }

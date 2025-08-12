@@ -28,7 +28,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Future<void> _fetchAttendance() async {
     final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
-    await attendanceProvider.fetchAttendance(month: _selectedMonth);
+    await attendanceProvider.fetchAttendance();
   }
 
   Future<void> _selectMonth() async {

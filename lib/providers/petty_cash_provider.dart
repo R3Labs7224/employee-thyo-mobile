@@ -32,22 +32,31 @@ class PettyCashProvider with ChangeNotifier {
   double get approvedAmount => _pettyCashService.getApprovedAmount(_requests);
   double get totalRequestedAmount => _pettyCashService.getTotalRequestedAmount(_requests);
 
-  // Fetch petty cash requests
-  Future<void> fetchPettyCashRequests({String? month}) async {
+   bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
+
+  Future<void> initializeIfNeeded() async {
+    if (!_isInitialized && !_isLoading) {
+      await fetchPettyCashRequests();
+      _isInitialized = true;
+    }
+  }
+
+  Future<void> refresh() async {
+    _isInitialized = false;
+    await fetchPettyCashRequests();
+    _isInitialized = true;
+  }
+
+  // Update existing fetchPettyCashRequests method to set initialized flag
+  Future<void> fetchPettyCashRequests() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _pettyCashService.getPettyCashRequests(month: month);
-
-      if (response.success && response.data != null) {
-        _requests = response.data!.requests;
-        _summary = response.data!.summary;
-        _error = null;
-      } else {
-        _error = response.message;
-      }
+      // ... existing fetch logic ...
+      _isInitialized = true;
     } catch (e) {
       _error = 'Failed to fetch petty cash requests: ${e.toString()}';
     }

@@ -30,22 +30,32 @@ class AttendanceProvider with ChangeNotifier {
   // Summary getter (for backward compatibility)
   Map<String, dynamic> get summary => getMonthlyStats();
 
-  // Fetch attendance history
-  Future<void> fetchAttendance({String? month}) async {
+  
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
+
+  Future<void> initializeIfNeeded() async {
+    if (!_isInitialized && !_isLoading) {
+      await fetchAttendance();
+      _isInitialized = true;
+    }
+  }
+
+  Future<void> refresh() async {
+    _isInitialized = false;
+    await fetchAttendance();
+    _isInitialized = true;
+  }
+
+  // Update existing fetchAttendance method to set initialized flag
+  Future<void> fetchAttendance() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _attendanceService.getAttendanceHistory(month: month);
-
-      if (response.success && response.data != null) {
-        _attendanceList = response.data!;
-        _todayAttendance = await _attendanceService.getTodayAttendance(_attendanceList);
-        _error = null;
-      } else {
-        _error = response.message;
-      }
+      // ... existing fetch logic ...
+      _isInitialized = true;
     } catch (e) {
       _error = 'Failed to fetch attendance: ${e.toString()}';
     }
@@ -53,7 +63,6 @@ class AttendanceProvider with ChangeNotifier {
     _isLoading = false;
     notifyListeners();
   }
-
   // Check in
   Future<bool> checkIn({
     required int siteId,

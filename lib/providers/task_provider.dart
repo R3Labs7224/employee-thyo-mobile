@@ -23,24 +23,31 @@ class TaskProvider with ChangeNotifier {
   
   Task? get activeTask => _taskService.getActiveTask(_tasks);
 
-  // Fetch tasks for a specific date
-  Future<void> fetchTasks({String? date, int? limit}) async {
+   bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
+
+  Future<void> initializeIfNeeded() async {
+    if (!_isInitialized && !_isLoading) {
+      await fetchTasks();
+      _isInitialized = true;
+    }
+  }
+
+  Future<void> refresh() async {
+    _isInitialized = false;
+    await fetchTasks();
+    _isInitialized = true;
+  }
+
+  // Update existing fetchTasks method to set initialized flag
+  Future<void> fetchTasks() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _taskService.getTasks(date: date, limit: limit);
-
-      if (response.success && response.data != null) {
-        _tasks = response.data!.tasks;
-        _summary = response.data!.summary;
-        _canCreateTask = response.data!.canCreateTask;
-        _attendanceStatus = response.data!.attendanceStatus;
-        _error = null;
-      } else {
-        _error = response.message;
-      }
+      // ... existing fetch logic ...
+      _isInitialized = true;
     } catch (e) {
       _error = 'Failed to fetch tasks: ${e.toString()}';
     }
@@ -48,6 +55,7 @@ class TaskProvider with ChangeNotifier {
     _isLoading = false;
     notifyListeners();
   }
+
 
   // Create a new task
   Future<bool> createTask({

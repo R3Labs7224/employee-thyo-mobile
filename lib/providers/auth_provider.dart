@@ -8,10 +8,16 @@ class AuthProvider with ChangeNotifier {
 
   Employee? _employee;
   String? _token;
-  bool _isLoading = false; // Changed from true to false
+  bool _isLoading = false;
   bool _isAuthenticated = false;
   String? _error;
-  bool _isInitialized = false; // Add initialization flag
+  bool _isInitialized = false;
+
+  // Additional data from login response
+  MonthlyStats? _monthlyStats;
+  EmployeePermissions? _permissions;
+  int _pendingPettyCash = 0;
+  int _activeTasks = 0;
 
   // Getters
   Employee? get employee => _employee;
@@ -20,120 +26,200 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _isAuthenticated;
   String? get error => _error;
   bool get isInitialized => _isInitialized;
+  MonthlyStats? get monthlyStats => _monthlyStats;
+  EmployeePermissions? get permissions => _permissions;
+  int get pendingPettyCash => _pendingPettyCash;
+  int get activeTasks => _activeTasks;
 
   // Initialize auth state from storage
   Future<void> initializeAuth() async {
     if (_isInitialized) return; // Prevent multiple initializations
     
-    _isLoading = true;
-    notifyListeners();
+    debugPrint('🔐 AuthProvider: Initializing authentication');
+    _setLoading(true);
 
     try {
       final isAuth = await _authService.isAuthenticated();
       if (isAuth) {
         _employee = await _authService.getStoredEmployee();
         _token = await _authService.getStoredToken();
-        _isAuthenticated = true;
         
-        // Debug logging
-        debugPrint('🔐 Auth initialized - User authenticated: ${_employee?.name}');
+        if (_employee != null && _token != null) {
+          _isAuthenticated = true;
+          debugPrint('🔐 AuthProvider: User authenticated - ${_employee?.name}');
+        } else {
+          debugPrint('🔐 AuthProvider: Invalid stored credentials, clearing');
+          await _authService.clearAuth();
+          _isAuthenticated = false;
+        }
       } else {
-        debugPrint('🔐 Auth initialized - No stored credentials');
+        debugPrint('🔐 AuthProvider: No stored credentials');
+        _isAuthenticated = false;
       }
     } catch (e) {
       _error = 'Failed to initialize authentication: ${e.toString()}';
-      debugPrint('🔐 Auth initialization error: $e');
+      debugPrint('🔐 AuthProvider: Initialization error - $e');
+      _isAuthenticated = false;
     }
 
-    _isLoading = false;
+    _setLoading(false);
     _isInitialized = true;
-    notifyListeners();
   }
 
   // Login with employee code and password
   Future<bool> login(String employeeCode, String password) async {
-    _isLoading = true;
+    debugPrint('🔐 AuthProvider: Starting login for employee: $employeeCode');
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
       final response = await _authService.login(employeeCode, password);
 
       if (response.success && response.data != null) {
-        _token = response.data!.token;
-        _employee = response.data!.employee;
+        final loginData = response.data!;
+        
+        // Set authentication data
+        _token = loginData.token;
+        _employee = loginData.employee;
         _isAuthenticated = true;
         _error = null;
         
-        debugPrint('✅ Login successful: ${_employee?.name}');
+        // Set additional data from login response
+        _monthlyStats = loginData.monthlyStats;
+        _permissions = loginData.permissions;
+        _pendingPettyCash = loginData.pendingPettyCash;
+        _activeTasks = loginData.activeTasks;
         
-        _isLoading = false;
-        notifyListeners();
+        debugPrint('✅ AuthProvider: Login successful - ${_employee?.name}');
+        debugPrint('✅ Monthly Stats: ${_monthlyStats?.totalDays} total days');
+        debugPrint('✅ Permissions: Can check-in: ${_permissions?.canCheckin}');
+        
+        _setLoading(false);
         return true;
       } else {
-        _error = response.message;
-        debugPrint('❌ Login failed: ${response.message}');
-        _isLoading = false;
-        notifyListeners();
+        _error = response.message ?? 'Login failed';
+        debugPrint('❌ AuthProvider: Login failed - ${response.message}');
+        _setLoading(false);
         return false;
       }
     } catch (e) {
       _error = 'Login failed: ${e.toString()}';
-      debugPrint('❌ Login error: $e');
-      _isLoading = false;
-      notifyListeners();
+      debugPrint('❌ AuthProvider: Login exception - $e');
+      _setLoading(false);
       return false;
     }
   }
 
   // Logout
   Future<void> logout() async {
-    _isLoading = true;
-    notifyListeners();
+    debugPrint('🔐 AuthProvider: Starting logout');
+    _setLoading(true);
 
     try {
       await _authService.logout();
-      debugPrint('👋 User logged out');
+      debugPrint('👋 AuthProvider: Logout successful');
     } catch (e) {
-      debugPrint('⚠️ Logout error: $e');
+      debugPrint('⚠️ AuthProvider: Logout error - $e');
       // Continue with logout even if API call fails
     }
 
+    // Clear all authentication data
     _token = null;
     _employee = null;
     _isAuthenticated = false;
     _error = null;
+    _monthlyStats = null;
+    _permissions = null;
+    _pendingPettyCash = 0;
+    _activeTasks = 0;
+    _isInitialized = false;
 
-    _isLoading = false;
-    notifyListeners();
+    _setLoading(false);
+    debugPrint('🔐 AuthProvider: All auth data cleared');
   }
 
   // Update employee data
   void updateEmployee(Employee updatedEmployee) {
     _employee = updatedEmployee;
-    notifyListeners();
+    _safeNotifyListeners();
+    debugPrint('🔐 AuthProvider: Employee data updated - ${updatedEmployee.name}');
   }
 
   // Clear error
   void clearError() {
     _error = null;
-    notifyListeners();
-  }
-
-  // Clear authentication
-  Future<void> clearAuth() async {
-    await _authService.clearAuth();
-    _token = null;
-    _employee = null;
-    _isAuthenticated = false;
-    _error = null;
-    _isInitialized = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   // Force refresh authentication state
   Future<void> refreshAuthState() async {
+    debugPrint('🔐 AuthProvider: Refreshing auth state');
     _isInitialized = false;
     await initializeAuth();
+  }
+
+  // Check if user can perform specific actions
+  bool canCheckIn() {
+    return _permissions?.canCheckin ?? false;
+  }
+
+  bool canCheckOut() {
+    return _permissions?.canCheckout ?? false;
+  }
+
+  bool canCreateTask() {
+    return _permissions?.canCreateTask ?? false;
+  }
+
+  // Get employee work location
+  Map<String, dynamic>? getWorkLocation() {
+    if (_employee?.siteLatitude != null && _employee?.siteLongitude != null) {
+      return {
+        'latitude': _employee!.siteLatitude!,
+        'longitude': _employee!.siteLongitude!,
+        'siteName': _employee!.siteName ?? 'Unknown Site',
+        'siteAddress': _employee!.siteAddress ?? 'Address not available',
+      };
+    }
+    return null;
+  }
+
+  // Private helper methods
+  void _setLoading(bool loading) {
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _safeNotifyListeners() {
+    // Use addPostFrameCallback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_disposed) {
+        notifyListeners();
+      }
+    });
+  }
+
+  // Track disposal to prevent notifications after disposal
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  // Debug method to print current state
+  void debugPrintState() {
+    debugPrint('🔐 AuthProvider State:');
+    debugPrint('  - Authenticated: $_isAuthenticated');
+    debugPrint('  - Employee: ${_employee?.name ?? 'None'}');
+    debugPrint('  - Token: ${_token != null ? 'Present' : 'None'}');
+    debugPrint('  - Loading: $_isLoading');
+    debugPrint('  - Error: $_error');
+    debugPrint('  - Initialized: $_isInitialized');
+    debugPrint('  - Pending Petty Cash: $_pendingPettyCash');
+    debugPrint('  - Active Tasks: $_activeTasks');
   }
 }
