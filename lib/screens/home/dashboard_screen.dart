@@ -340,40 +340,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildStatsGrid(AttendanceProvider attendanceProvider, TaskProvider taskProvider, PettyCashProvider pettyCashProvider) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      children: [
-        _buildStatCard(
-          'Present Days',
-          '${attendanceProvider.todayAttendance ?? 0}',
-          Icons.calendar_today,
-          Colors.green,
-        ),
-        _buildStatCard(
-          'Active Tasks',
-          '${taskProvider.activeTasks?.length ?? 0}',
-          Icons.task_alt,
-          Colors.blue,
-        ),
-        _buildStatCard(
-          'Pending Requests',
-          '${pettyCashProvider.pendingRequests?.length ?? 0}',
-          Icons.pending,
-          Colors.orange,
-        ),
-        _buildStatCard(
-          'Working Hours',
-          '${attendanceProvider.attendanceList.first ?? '0.0'}h',
-          Icons.schedule,
-          Colors.purple,
-        ),
-      ],
-    );
-  }
+  return GridView.count(
+    crossAxisCount: 2,
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    crossAxisSpacing: 16,
+    mainAxisSpacing: 16,
+    children: [
+      _buildStatCard(
+        'Present Days',
+        '${attendanceProvider.todayAttendance ?? 0}',
+        Icons.calendar_today,
+        Colors.green,
+      ),
+      _buildStatCard(
+        'Active Tasks',
+        '${taskProvider.activeTasks?.length ?? 0}',
+        Icons.task_alt,
+        Colors.blue,
+      ),
+      _buildStatCard(
+        'Pending Requests',
+        '${pettyCashProvider.pendingRequests?.length ?? 0}',
+        Icons.pending,
+        Colors.orange,
+      ),
+      _buildStatCard(
+        'Working Hours',
+        // Fix: Check if list is not empty before accessing first element
+        '${attendanceProvider.attendanceList.isNotEmpty ? attendanceProvider.attendanceList.first : '0.0'}h',
+        Icons.schedule,
+        Colors.purple,
+      ),
+    ],
+  );
+}
 
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Card(
