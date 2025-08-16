@@ -67,8 +67,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   _buildSalaryInfo(employee),
                   const SizedBox(height: 16),
                   _buildLocationInfo(employee),
-                  const SizedBox(height: 24),
-                  _buildActionButtons(authProvider),
+               
                 ],
               ),
             );
@@ -81,6 +80,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildProfileHeader(employee) {
     return CustomCard(
       child: Container(
+        width: MediaQuery.of(context).size.width*0.9,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -93,7 +93,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             end: Alignment.bottomRight,
           ),
         ),
-        child: Column(
+        child: Row(
           children: [
             Container(
               width: 80,
@@ -114,7 +114,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(width: 16),
             Text(
               employee.name,
               style: const TextStyle(
@@ -123,7 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
+           Spacer(),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -135,19 +135,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.accentColor,
+                  color: Colors.black,
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              employee.departmentName,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+          
           ],
         ),
       ),
@@ -286,52 +278,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildActionButtons(AuthProvider authProvider) {
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () => _showEditProfileDialog(),
-            icon: const Icon(Icons.edit),
-            label: const Text('Edit Profile'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () => _showChangePasswordDialog(),
-            icon: const Icon(Icons.lock),
-            label: const Text('Change Password'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.primaryColor,
-              side: const BorderSide(color: AppTheme.primaryColor),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () => _showLogoutDialog(authProvider),
-            icon: const Icon(Icons.logout, color: Colors.red),
-            label: const Text('Logout', style: TextStyle(color: Colors.red)),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.red),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  
 
   void _showEditProfileDialog() {
     showDialog(

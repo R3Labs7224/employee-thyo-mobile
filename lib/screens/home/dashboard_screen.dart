@@ -201,31 +201,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Text(
-                      'Welcome back,',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 14,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Welcome back,',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          employee?.name ?? 'Employee',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        
+                       
+                      ],
                     ),
-                    Text(
-                      employee?.name ?? 'Employee',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                   
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
+                    Spacer(),
+                      const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -233,14 +234,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              'Employee ID: ${employee?.employeeCode ?? 'N/A'}',
+              employee?.employeeCode ?? 'N/A',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        
         ],
       ),
     );
