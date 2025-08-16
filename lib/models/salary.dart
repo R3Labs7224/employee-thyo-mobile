@@ -1,3 +1,11 @@
+// lib/models/salary.dart
+
+// Helper functions for safe type conversion
+int _safeInt(dynamic value) => value is int ? value : int.tryParse(value?.toString() ?? '0') ?? 0;
+double _safeDouble(dynamic value) => value is double ? value : double.tryParse(value?.toString() ?? '0.0') ?? 0.0;
+String _safeString(dynamic value) => value?.toString() ?? '';
+bool _safeBool(dynamic value) => value is bool ? value : (value?.toString().toLowerCase() == 'true');
+
 // lib/models/salary_slip.dart
 class SalarySlip {
   final int id;
@@ -45,25 +53,61 @@ class SalarySlip {
 
   factory SalarySlip.fromJson(Map<String, dynamic> json) {
     return SalarySlip(
-      id: json['id'] ?? 0,
-      employeeId: json['employee_id'] ?? 0,
-      month: json['month'] ?? 0,
-      year: json['year'] ?? 0,
-      basicSalary: (json['basic_salary'] ?? 0).toDouble(),
-      totalWorkingDays: json['total_working_days'] ?? 0,
-      presentDays: json['present_days'] ?? 0,
-      calculatedSalary: (json['calculated_salary'] ?? json['gross_salary'] ?? 0).toDouble(),
-      totalHours: (json['total_hours'] ?? 0).toDouble(),
-      bonus: (json['bonus'] ?? 0).toDouble(),
-      advance: (json['advance'] ?? 0).toDouble(),
-      deductions: (json['deductions'] ?? 0).toDouble(),
-      netSalary: (json['net_salary'] ?? 0).toDouble(),
-      status: json['status'] ?? 'draft',
-      generatedDate: json['generated_date'],
-      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
-      employeeName: json['employee_name'],
-      employeeCode: json['employee_code'],
+      id: _safeInt(json['id']),
+      employeeId: _safeInt(json['employee_id']),
+      month: _safeInt(json['month']),
+      year: _safeInt(json['year']),
+      basicSalary: _safeDouble(json['basic_salary']),
+      totalWorkingDays: _safeInt(json['total_working_days']),
+      presentDays: _safeInt(json['present_days']),
+      calculatedSalary: _safeDouble(json['calculated_salary'] ?? json['gross_salary']),
+      totalHours: _safeDouble(json['total_hours']),
+      bonus: _safeDouble(json['bonus']),
+      advance: _safeDouble(json['advance']),
+      deductions: _safeDouble(json['deductions']),
+      netSalary: _safeDouble(json['net_salary']),
+      status: _safeString(json['status']).isEmpty ? 'draft' : _safeString(json['status']),
+      generatedDate: json['generated_date']?.toString(),
+      createdAt: _parseDateTime(json['created_at']),
+      employeeName: json['employee_name']?.toString(),
+      employeeCode: json['employee_code']?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'employee_id': employeeId,
+      'month': month,
+      'year': year,
+      'basic_salary': basicSalary,
+      'total_working_days': totalWorkingDays,
+      'present_days': presentDays,
+      'calculated_salary': calculatedSalary,
+      'gross_salary': grossSalary,
+      'total_hours': totalHours,
+      'bonus': bonus,
+      'advance': advance,
+      'deductions': deductions,
+      'net_salary': netSalary,
+      'status': status,
+      'generated_date': generatedDate,
+      'created_at': createdAt.toIso8601String(),
+      'employee_name': employeeName,
+      'employee_code': employeeCode,
+    };
+  }
+}
+
+// Helper function to safely parse DateTime
+DateTime _parseDateTime(dynamic value) {
+  if (value == null) return DateTime.now();
+  if (value is DateTime) return value;
+  
+  try {
+    return DateTime.parse(value.toString());
+  } catch (e) {
+    return DateTime.now();
   }
 }
 
@@ -83,11 +127,25 @@ class AttendanceSummary {
 
   factory AttendanceSummary.fromJson(Map<String, dynamic> json) {
     return AttendanceSummary(
-      totalDays: json['total_days'] ?? 0,
-      approvedDays: json['approved_days'] ?? 0,
-      pendingDays: json['pending_days'] ?? 0,
-      totalHours: (json['total_hours'] ?? 0).toDouble(),
+      totalDays: _safeInt(json['total_days']),
+      approvedDays: _safeInt(json['approved_days']),
+      pendingDays: _safeInt(json['pending_days']),
+      totalHours: _safeDouble(json['total_hours']),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'total_days': totalDays,
+      'approved_days': approvedDays,
+      'pending_days': pendingDays,
+      'total_hours': totalHours,
+    };
+  }
+
+  double get attendancePercentage {
+    if (totalDays == 0) return 0.0;
+    return (approvedDays / totalDays) * 100;
   }
 }
 
@@ -111,13 +169,24 @@ class EmployeeInfo {
 
   factory EmployeeInfo.fromJson(Map<String, dynamic> json) {
     return EmployeeInfo(
-      basicSalary: (json['basic_salary'] ?? 0).toDouble(),
-      dailyWage: (json['daily_wage'] ?? 0).toDouble(),
-      name: json['name'] ?? '',
-      employeeCode: json['employee_code'] ?? '',
-      departmentName: json['department_name'] ?? 'No Department',
-      epfNumber: json['epf_number'],
+      basicSalary: _safeDouble(json['basic_salary']),
+      dailyWage: _safeDouble(json['daily_wage']),
+      name: _safeString(json['name']),
+      employeeCode: _safeString(json['employee_code']),
+      departmentName: _safeString(json['department_name']),
+      epfNumber: json['epf_number']?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'basic_salary': basicSalary,
+      'daily_wage': dailyWage,
+      'name': name,
+      'employee_code': employeeCode,
+      'department_name': departmentName,
+      'epf_number': epfNumber,
+    };
   }
 }
 
@@ -139,11 +208,21 @@ class YearlySummary {
 
   factory YearlySummary.fromJson(Map<String, dynamic> json) {
     return YearlySummary(
-      totalEarned: (json['total_earned'] ?? 0).toDouble(),
-      totalDeductions: (json['total_deductions'] ?? 0).toDouble(),
-      totalBonus: (json['total_bonus'] ?? 0).toDouble(),
-      totalMonths: json['total_months'] ?? 0,
-      avgMonthlySalary: (json['avg_monthly_salary'] ?? 0).toDouble(),
+      totalEarned: _safeDouble(json['total_earned']),
+      totalDeductions: _safeDouble(json['total_deductions']),
+      totalBonus: _safeDouble(json['total_bonus']),
+      totalMonths: _safeInt(json['total_months']),
+      avgMonthlySalary: _safeDouble(json['avg_monthly_salary']),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'total_earned': totalEarned,
+      'total_deductions': totalDeductions,
+      'total_bonus': totalBonus,
+      'total_months': totalMonths,
+      'avg_monthly_salary': avgMonthlySalary,
+    };
   }
 }

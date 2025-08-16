@@ -680,7 +680,7 @@ class ApiService {
           'message': jsonResponse['message'],
         });
 
-        return ApiResponse.fromJson(jsonResponse, fromJson!);
+        return ApiResponse.fromJson(jsonResponse, fromJson);
       } else {
         // Error response handling with field mismatch analysis
         _debugLog('❌ ERROR RESPONSE', 'Server returned error response', {
