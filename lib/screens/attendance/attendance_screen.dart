@@ -54,13 +54,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return Scaffold(
       appBar: CustomAppBar(
         title: 'Attendance',
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.calendar_month),
-            onPressed: _selectMonth,
-            tooltip: 'Select Month',
-          ),
-        ],
+        // actions: [
+        //   IconButton(
+        //     icon: const Icon(Icons.calendar_month),
+        //     onPressed: _selectMonth,
+        //     tooltip: 'Select Month',
+        //   ),
+        // ],
       ),
       body: Consumer<AttendanceProvider>(
         builder: (context, attendanceProvider, child) {
@@ -77,7 +77,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             child: Column(
               children: [
                 _buildHeader(attendanceProvider),
-                _buildQuickActions(attendanceProvider),
+
                 _buildStatsSection(attendanceProvider),
                 Expanded(
                   child: _buildAttendanceList(attendanceProvider),
@@ -203,75 +203,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
-  Widget _buildQuickActions(AttendanceProvider attendanceProvider) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildActionButton(
-              icon: Icons.login,
-              label: 'Check In',
-              color: Colors.green,
-              enabled: attendanceProvider.canCheckIn,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.checkIn),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildActionButton(
-              icon: Icons.logout,
-              label: 'Check Out',
-              color: Colors.orange,
-              enabled: attendanceProvider.canCheckOut,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.checkOut),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required bool enabled,
-    required VoidCallback? onTap,
-  }) {
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: enabled ? color.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: enabled ? color : Colors.grey,
-            width: 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: enabled ? color : Colors.grey,
-              size: 28,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: enabled ? color : Colors.grey,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  
 
   Widget _buildStatsSection(AttendanceProvider attendanceProvider) {
     final stats = attendanceProvider.getMonthlyStats();

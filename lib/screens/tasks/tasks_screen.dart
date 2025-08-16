@@ -1,3 +1,4 @@
+// lib/screens/tasks/tasks_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -17,12 +18,16 @@ class TasksScreen extends StatefulWidget {
 }
 
 class _TasksScreenState extends State<TasksScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late TabController _tabController;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
   String _selectedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  bool _isInitialized = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -36,8 +41,10 @@ class _TasksScreenState extends State<TasksScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
     );
 
-    _animationController.forward();
-    _loadTasks();
+    // FIXED: Use addPostFrameCallback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeTasksScreen();
+    });
   }
 
   @override
@@ -47,13 +54,72 @@ class _TasksScreenState extends State<TasksScreen>
     super.dispose();
   }
 
+  // FIXED: Separate initialization method
+  Future<void> _initializeTasksScreen() async {
+    if (_isInitialized) return;
+    
+    debugPrint('🔧 TasksScreen: Initializing...');
+    
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      
+      // Initialize the provider if needed
+      await taskProvider.initializeIfNeeded();
+      
+      // Start animation
+      _animationController.forward();
+      
+      setState(() {
+        _isInitialized = true;
+      });
+      
+      debugPrint('✅ TasksScreen: Initialization complete');
+    } catch (e) {
+      debugPrint('❌ TasksScreen: Initialization error - $e');
+    }
+  }
+
+  // FIXED: Improved _loadTasks method with better error handling
   Future<void> _loadTasks() async {
-    final provider = Provider.of<TaskProvider>(context, listen: false);
-    await provider.fetchTasks();
+    if (!mounted) return;
+    
+    debugPrint('🔄 TasksScreen: Loading tasks for date: $_selectedDate');
+    
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      
+      // Clear any existing errors
+      taskProvider.clearError();
+      
+      await taskProvider.fetchTasks(date: _selectedDate);
+      
+      if (mounted && taskProvider.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${taskProvider.error}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ TasksScreen: Load tasks error - $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load tasks: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     return Scaffold(
       appBar: CustomAppBar(
         title: 'Tasks',
@@ -63,14 +129,30 @@ class _TasksScreenState extends State<TasksScreen>
               return provider.canCreateTask
                   ? IconButton(
                       icon: const Icon(Icons.add),
-                      onPressed: () => Navigator.pushNamed(context, AppRoutes.createTask),
+                      onPressed: provider.isLoading ? null : () async {
+                        debugPrint('🔄 TasksScreen: Navigating to create task');
+                        final result = await Navigator.pushNamed(
+                          context, 
+                          AppRoutes.createTask
+                        );
+                        // FIXED: Refresh tasks if a task was created
+                        if (result == true && mounted) {
+                          debugPrint('✅ TasksScreen: Task created, refreshing list');
+                          await _loadTasks();
+                        }
+                      },
                     )
                   : const SizedBox();
             },
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadTasks,
+            onPressed: () async {
+              final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+              if (!taskProvider.isLoading) {
+                await _loadTasks();
+              }
+            },
           ),
         ],
       ),
@@ -96,9 +178,29 @@ class _TasksScreenState extends State<TasksScreen>
         builder: (context, provider, _) {
           return provider.canCreateTask
               ? FloatingActionButton(
-                  onPressed: () => Navigator.pushNamed(context, AppRoutes.createTask),
-                  backgroundColor: AppTheme.primaryColor,
-                  child: const Icon(Icons.add, color: Colors.white),
+                  onPressed: provider.isLoading ? null : () async {
+                    debugPrint('🔄 TasksScreen: FAB - Navigating to create task');
+                    final result = await Navigator.pushNamed(
+                      context, 
+                      AppRoutes.createTask
+                    );
+                    // FIXED: Refresh tasks if a task was created
+                    if (result == true && mounted) {
+                      debugPrint('✅ TasksScreen: FAB - Task created, refreshing list');
+                      await _loadTasks();
+                    }
+                  },
+                  backgroundColor: provider.isLoading ? Colors.grey : AppTheme.primaryColor,
+                  child: provider.isLoading 
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.add, color: Colors.white),
                 )
               : const SizedBox();
         },
@@ -241,11 +343,17 @@ class _TasksScreenState extends State<TasksScreen>
                 task: task,
                 onTap: () => _showTaskDetails(task),
                 onComplete: task.status == 'active'
-                    ? () => Navigator.pushNamed(
-                        context,
-                        AppRoutes.completeTask,
-                        arguments: task,
-                      )
+                    ? () async {
+                        final result = await Navigator.pushNamed(
+                          context,
+                          AppRoutes.completeTask,
+                          arguments: task,
+                        );
+                        // Refresh tasks if task was completed
+                        if (result == true) {
+                          _loadTasks();
+                        }
+                      }
                     : null,
               );
             },
@@ -308,7 +416,7 @@ class _TasksScreenState extends State<TasksScreen>
     );
   }
 
-  Widget _buildSummaryCards(summary) {
+  Widget _buildSummaryCards(dynamic summary) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -367,35 +475,27 @@ class _TasksScreenState extends State<TasksScreen>
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return CustomCard(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Icon(icon, color: color, size: 20),
-              ],
+            Icon(icon, size: 32, color: color),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                value,
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
               ),
             ),
           ],
@@ -405,51 +505,46 @@ class _TasksScreenState extends State<TasksScreen>
   }
 
   Widget _buildCreateTaskCard(TaskProvider provider) {
-    return CustomCard(
+    return GestureDetector(
       onTap: provider.canCreateTask
-          ? () => Navigator.pushNamed(context, AppRoutes.createTask)
+          ? () async {
+              final result = await Navigator.pushNamed(context, AppRoutes.createTask);
+              if (result == true) {
+                _loadTasks();
+              }
+            }
           : null,
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
+          color: provider.canCreateTask
+              ? AppTheme.primaryColor.withOpacity(0.1)
+              : Colors.grey.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
-          gradient: provider.canCreateTask
-              ? LinearGradient(
-                  colors: [
-                    AppTheme.primaryColor.withOpacity(0.1),
-                    AppTheme.accentColor.withOpacity(0.1),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null,
-          color: provider.canCreateTask ? null : Colors.grey[100],
+          border: Border.all(
+            color: provider.canCreateTask
+                ? AppTheme.primaryColor.withOpacity(0.3)
+                : Colors.grey.withOpacity(0.3),
+          ),
         ),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: provider.canCreateTask
-                    ? AppTheme.primaryColor
-                    : Colors.grey,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.add_task,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Icon(
+                    Icons.add_task,
+                    size: 32,
+                    color: provider.canCreateTask
+                        ? AppTheme.primaryColor
+                        : Colors.grey[600],
+                  ),
+                  const SizedBox(height: 8),
                   Text(
                     'Create New Task',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: provider.canCreateTask
                           ? AppTheme.primaryColor
@@ -531,7 +626,7 @@ class _TasksScreenState extends State<TasksScreen>
     });
   }
 
-  void _showTaskDetails(task) {
+  void _showTaskDetails(dynamic task) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -549,30 +644,13 @@ class _TasksScreenState extends State<TasksScreen>
               ),
             ),
             const SizedBox(height: 16),
-            _buildDetailRow('Title', task.title),
-            _buildDetailRow('Description', task.description),
+            _buildDetailRow('Title', task.title ?? 'N/A'),
+            _buildDetailRow('Description', task.description ?? 'No description'),
             _buildDetailRow('Site', task.siteName ?? 'Unknown'),
             _buildDetailRow('Status', task.status?.toUpperCase() ?? 'UNKNOWN'),
-            if (task.startTime != null)
-              _buildDetailRow('Started', DateFormat('dd MMM yyyy HH:mm').format(DateTime.parse(task.startTime!))),
+            _buildDetailRow('Start Time', task.startTime ?? 'N/A'),
             if (task.endTime != null)
-              _buildDetailRow('Completed', DateFormat('dd MMM yyyy HH:mm').format(DateTime.parse(task.endTime!))),
-            const SizedBox(height: 16),
-            if (task.status == 'active')
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(
-                      context,
-                      AppRoutes.completeTask,
-                      arguments: task,
-                    );
-                  },
-                  child: const Text('Complete Task'),
-                ),
-              ),
+              _buildDetailRow('End Time', task.endTime!),
           ],
         ),
       ),
@@ -581,7 +659,7 @@ class _TasksScreenState extends State<TasksScreen>
 
   Widget _buildDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -589,16 +667,18 @@ class _TasksScreenState extends State<TasksScreen>
             width: 100,
             child: Text(
               '$label:',
-              style: TextStyle(
+              style: const TextStyle(
                 fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
+                color: Colors.grey,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ),
         ],

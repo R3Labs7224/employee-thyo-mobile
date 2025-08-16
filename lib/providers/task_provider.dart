@@ -1,4 +1,4 @@
-// lib/providers/task_provider.dart
+// lib/providers/task_provider.dart - Fixed loading state management
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/task_service.dart';
@@ -12,6 +12,8 @@ class TaskProvider with ChangeNotifier {
   String _attendanceStatus = 'not_checked_in';
   bool _isLoading = false;
   String? _error;
+  bool _isInitialized = false;
+  String _currentDate = '';
 
   // Getters
   List<Task> get tasks => _tasks;
@@ -20,44 +22,71 @@ class TaskProvider with ChangeNotifier {
   String get attendanceStatus => _attendanceStatus;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isInitialized => _isInitialized;
   
   Task? get activeTask => _taskService.getActiveTask(_tasks);
 
-   bool _isInitialized = false;
-  bool get isInitialized => _isInitialized;
-
+  // Initialize data if not already loaded
   Future<void> initializeIfNeeded() async {
     if (!_isInitialized && !_isLoading) {
+      debugPrint('🔧 TaskProvider: Initializing...');
       await fetchTasks();
-      _isInitialized = true;
     }
   }
 
+  // Refresh data
   Future<void> refresh() async {
+    debugPrint('🔧 TaskProvider: Refreshing...');
     _isInitialized = false;
     await fetchTasks();
-    _isInitialized = true;
   }
 
-  // Update existing fetchTasks method to set initialized flag
-  Future<void> fetchTasks() async {
-    _isLoading = true;
+  // FIXED: Complete implementation of fetchTasks method
+  Future<void> fetchTasks({String? date}) async {
+    // Prevent multiple simultaneous calls
+    if (_isLoading) {
+      debugPrint('🔧 TaskProvider: Already loading, skipping fetch');
+      return;
+    }
+    
+    _setLoading(true);
     _error = null;
-    notifyListeners();
+    
+    // Use current date if not specified
+    final targetDate = date ?? DateTime.now().toIso8601String().split('T')[0];
+    _currentDate = targetDate;
+    
+    debugPrint('🔄 TaskProvider: Fetching tasks for date: $targetDate');
 
     try {
-      // ... existing fetch logic ...
-      _isInitialized = true;
+      final response = await _taskService.getTasks(date: targetDate);
+
+      if (response.success && response.data != null) {
+        final taskResponse = response.data!;
+        
+        _tasks = taskResponse.tasks;
+        _summary = taskResponse.summary;
+        _canCreateTask = taskResponse.canCreateTask;
+        _attendanceStatus = taskResponse.attendanceStatus;
+        _error = null;
+        _isInitialized = true;
+        
+        debugPrint('✅ TaskProvider: Tasks loaded successfully');
+        debugPrint('📊 TaskProvider: ${_tasks.length} tasks, canCreate: $_canCreateTask, status: $_attendanceStatus');
+      } else {
+        _error = response.message ?? 'Failed to fetch tasks';
+        debugPrint('❌ TaskProvider: Error - $_error');
+      }
     } catch (e) {
       _error = 'Failed to fetch tasks: ${e.toString()}';
+      debugPrint('❌ TaskProvider: Exception - $_error');
+    } finally {
+      // FIXED: Always reset loading state in finally block
+      _setLoading(false);
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
-
-  // Create a new task
+  // FIXED: Create a new task with proper loading state management
   Future<bool> createTask({
     required String title,
     String? description,
@@ -66,11 +95,18 @@ class TaskProvider with ChangeNotifier {
     required double longitude,
     String? taskImageBase64,
   }) async {
-    _isLoading = true;
+    // Prevent multiple simultaneous calls
+    if (_isLoading) {
+      debugPrint('🔧 TaskProvider: Already loading, skipping create');
+      return false;
+    }
+
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
+      debugPrint('🔄 TaskProvider: Creating task: $title');
+      
       final response = await _taskService.createTask(
         title: title,
         description: description,
@@ -81,107 +117,141 @@ class TaskProvider with ChangeNotifier {
       );
 
       if (response.success) {
-        // Refresh tasks
-        await fetchTasks();
-        _isLoading = false;
-        notifyListeners();
+        debugPrint('✅ TaskProvider: Task created successfully');
+        
+        // FIXED: Fetch fresh data after successful creation
+        await fetchTasks(date: _currentDate);
         return true;
       } else {
         _error = response.message;
-        _isLoading = false;
-        notifyListeners();
+        debugPrint('❌ TaskProvider: Create task error - $_error');
         return false;
       }
     } catch (e) {
       _error = 'Failed to create task: ${e.toString()}';
-      _isLoading = false;
-      notifyListeners();
+      debugPrint('❌ TaskProvider: Create task exception - $_error');
       return false;
+    } finally {
+      // FIXED: Always reset loading state
+      _setLoading(false);
     }
   }
 
-  // Complete a task
+  // FIXED: Complete a task with proper loading state management
   Future<bool> completeTask({
     required int taskId,
     String? completionNotes,
   }) async {
-    _isLoading = true;
+    // Prevent multiple simultaneous calls
+    if (_isLoading) {
+      debugPrint('🔧 TaskProvider: Already loading, skipping complete');
+      return false;
+    }
+
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
+      debugPrint('🔄 TaskProvider: Completing task: $taskId');
+      
       final response = await _taskService.completeTask(
         taskId: taskId,
         completionNotes: completionNotes,
       );
 
       if (response.success) {
-        // Refresh tasks
-        await fetchTasks();
-        _isLoading = false;
-        notifyListeners();
+        debugPrint('✅ TaskProvider: Task completed successfully');
+        
+        // FIXED: Fetch fresh data after successful completion
+        await fetchTasks(date: _currentDate);
         return true;
       } else {
         _error = response.message;
-        _isLoading = false;
-        notifyListeners();
+        debugPrint('❌ TaskProvider: Complete task error - $_error');
         return false;
       }
     } catch (e) {
       _error = 'Failed to complete task: ${e.toString()}';
-      _isLoading = false;
-      notifyListeners();
+      debugPrint('❌ TaskProvider: Complete task exception - $_error');
       return false;
+    } finally {
+      // FIXED: Always reset loading state
+      _setLoading(false);
     }
   }
 
-  // Get task by ID
+  // Helper methods
   Task? getTaskById(int taskId) {
     return _taskService.getTaskById(_tasks, taskId);
   }
 
-  // Get tasks by status
   List<Task> getTasksByStatus(String status) {
     return _tasks.where((task) => task.status == status).toList();
   }
 
-  // Get completed tasks
   List<Task> get completedTasks => getTasksByStatus('completed');
-
-  // Get active tasks
   List<Task> get activeTasks => getTasksByStatus('active');
-
-  // Get cancelled tasks
   List<Task> get cancelledTasks => getTasksByStatus('cancelled');
 
-  // Check if can create task based on response
   bool get canCreateTaskNow {
-    return _taskService.canCreateTask(TaskResponse(
-      tasks: _tasks,
-      summary: _summary ?? TaskSummary(
-        totalTasks: 0,
-        completedTasks: 0,
-        activeTasks: 0,
-        cancelledTasks: 0,
-      ),
-      canCreateTask: _canCreateTask,
-      attendanceStatus: _attendanceStatus,
-    ));
+    return _canCreateTask && _attendanceStatus == 'checked_in';
   }
 
-  // Clear error
   void clearError() {
-    _error = null;
-    notifyListeners();
+    if (_error != null) {
+      _error = null;
+      _safeNotifyListeners();
+    }
   }
 
-  // Reset data
   void reset() {
     _tasks.clear();
     _summary = null;
     _canCreateTask = false;
     _attendanceStatus = 'not_checked_in';
     _error = null;
-    notifyListeners();
+    _isLoading = false;
+    _isInitialized = false;
+    _currentDate = '';
+    _safeNotifyListeners();
+    debugPrint('🔧 TaskProvider: Data reset');
+  }
+
+  // FIXED: Private helper methods with better state management
+  void _setLoading(bool loading) {
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      debugPrint('🔧 TaskProvider: Loading state changed to: $loading');
+      _safeNotifyListeners();
+    }
+  }
+
+  void _safeNotifyListeners() {
+    // Use addPostFrameCallback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_disposed) {
+        notifyListeners();
+      }
+    });
+  }
+
+  // Track disposal to prevent notifications after disposal
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  // FIXED: Add debug method to print current state
+  void debugPrintState() {
+    debugPrint('🔧 TaskProvider State:');
+    debugPrint('  - Loading: $_isLoading');
+    debugPrint('  - Tasks: ${_tasks.length}');
+    debugPrint('  - Can Create: $_canCreateTask');
+    debugPrint('  - Attendance: $_attendanceStatus');
+    debugPrint('  - Error: $_error');
+    debugPrint('  - Initialized: $_isInitialized');
   }
 }

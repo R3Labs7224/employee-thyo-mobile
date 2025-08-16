@@ -1,4 +1,5 @@
 // lib/main.dart
+import 'package:ems/providers/site_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
@@ -15,10 +16,12 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => EmployeeProvider()),
+        ChangeNotifierProvider(create: (_) => SiteProvider()),
         ChangeNotifierProvider(create: (_) => AttendanceProvider()),
         ChangeNotifierProvider(create: (_) => TaskProvider()),
         ChangeNotifierProvider(create: (_) => PettyCashProvider()),
         ChangeNotifierProvider(create: (_) => SalaryProvider()),
+
       ],
       child: const MyApp(),
     ),

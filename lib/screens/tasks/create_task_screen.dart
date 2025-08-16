@@ -379,14 +379,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(site.name),
-                        if (distance != null)
-                          Text(
-                            '${distance.toStringAsFixed(0)}m away',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
+                       
                       ],
                     ),
                   );
