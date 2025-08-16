@@ -1,5 +1,6 @@
 // lib/providers/attendance_provider.dart
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/attendance.dart';
 import '../services/attendance_service.dart';
 
@@ -33,6 +34,16 @@ class AttendanceProvider with ChangeNotifier {
   
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
+  String _selectedMonth = DateFormat('yyyy-MM').format(DateTime.now());
+String get selectedMonth => _selectedMonth;
+
+// Method to change selected month
+Future<void> setSelectedMonth(String month) async {
+  if (_selectedMonth != month) {
+    _selectedMonth = month;
+    await fetchAttendance();
+  }
+}
 
   Future<void> initializeIfNeeded() async {
     if (!_isInitialized && !_isLoading) {
@@ -47,99 +58,121 @@ class AttendanceProvider with ChangeNotifier {
     _isInitialized = true;
   }
 
-  // Update existing fetchAttendance method to set initialized flag
-  Future<void> fetchAttendance() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+Future<void> fetchAttendance() async {
+  _isLoading = true;
+  _error = null;
+  notifyListeners();
 
-    try {
-      // ... existing fetch logic ...
+  try {
+    // Get attendance history for current/selected month
+    final response = await _attendanceService.getAttendanceHistory(
+      month: _selectedMonth, // You'll need to add this property
+    );
+
+    if (response.success) {
+      _attendanceList = response.data ?? [];
+      print("Attendence List: $_attendanceList");
+      
+      // Find today's attendance
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      try {
+        _todayAttendance = _attendanceList.firstWhere(
+          (attendance) => attendance.date == today,
+        );
+      } catch (e) {
+        _todayAttendance = null;
+      }
+      
       _isInitialized = true;
-    } catch (e) {
-      _error = 'Failed to fetch attendance: ${e.toString()}';
+      _error = null;
+    } else {
+      _error = response.message;
+      _attendanceList = [];
+      _todayAttendance = null;
     }
+  } catch (e) {
+    _error = 'Failed to fetch attendance: ${e.toString()}';
+    _attendanceList = [];
+    _todayAttendance = null;
+  }
 
+  _isLoading = false;
+  notifyListeners();
+}
+
+
+  Future<bool> checkIn({
+  required int siteId,
+  required double latitude,
+  required double longitude,
+  String? selfieBase64,
+}) async {
+  _isLoading = true;
+  _error = null;
+  notifyListeners();
+
+  try {
+    final response = await _attendanceService.checkIn(
+      siteId: siteId,
+      latitude: latitude,
+      longitude: longitude,
+      selfieBase64: selfieBase64,
+    );
+
+    if (response.success) {
+      // Refresh attendance data to get the latest state
+      await fetchAttendance();
+      return true;
+    } else {
+      _error = response.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  } catch (e) {
+    _error = 'Check-in failed: ${e.toString()}';
     _isLoading = false;
     notifyListeners();
+    return false;
   }
-  // Check in
-  Future<bool> checkIn({
-    required int siteId,
-    required double latitude,
-    required double longitude,
-    String? selfieBase64,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+}
 
-    try {
-      final response = await _attendanceService.checkIn(
-        siteId: siteId,
-        latitude: latitude,
-        longitude: longitude,
-        selfieBase64: selfieBase64,
-      );
+// And the checkOut method:
+Future<bool> checkOut({
+  required int siteId,
+  required double latitude,
+  required double longitude,
+  String? selfieBase64,
+}) async {
+  _isLoading = true;
+  _error = null;
+  notifyListeners();
 
-      if (response.success) {
-        // Refresh attendance data
-        await fetchAttendance();
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response.message;
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _error = 'Check-in failed: ${e.toString()}';
+  try {
+    final response = await _attendanceService.checkOut(
+      siteId: siteId,
+      latitude: latitude,
+      longitude: longitude,
+      selfieBase64: selfieBase64,
+    );
+
+    if (response.success) {
+      // Refresh attendance data to get the latest state
+      await fetchAttendance();
+      return true;
+    } else {
+      _error = response.message;
       _isLoading = false;
       notifyListeners();
       return false;
     }
-  }
-
-  // Check out
-  Future<bool> checkOut({
-    required int siteId,
-    required double latitude,
-    required double longitude,
-    String? selfieBase64,
-  }) async {
-    _isLoading = true;
-    _error = null;
+  } catch (e) {
+    _error = 'Check-out failed: ${e.toString()}';
+    _isLoading = false;
     notifyListeners();
-
-    try {
-      final response = await _attendanceService.checkOut(
-        siteId: siteId,
-        latitude: latitude,
-        longitude: longitude,
-        selfieBase64: selfieBase64,
-      );
-
-      if (response.success) {
-        // Refresh attendance data
-        await fetchAttendance();
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response.message;
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _error = 'Check-out failed: ${e.toString()}';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
+    return false;
   }
+}
 
   // Get attendance for specific date
   Attendance? getAttendanceForDate(String date) {

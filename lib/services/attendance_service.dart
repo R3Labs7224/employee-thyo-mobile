@@ -22,7 +22,7 @@ class AttendanceService {
             .map((item) => Attendance.fromJson(item))
             .toList(),
       );
-
+      print( "Attendance History Response: ${response.data!.first}");
       return response;
     } catch (e) {
       return ApiResponse.error('Failed to fetch attendance: ${e.toString()}');
