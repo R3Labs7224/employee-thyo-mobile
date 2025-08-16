@@ -1,132 +1,212 @@
 // lib/providers/salary_provider.dart
+import 'package:ems/models/salary.dart';
 import 'package:flutter/material.dart';
-import '../models/salary.dart';
-import '../services/salary_service.dart';
+import '../services/api_service.dart';
 
-class SalaryProvider with ChangeNotifier {
-  final SalaryService _salaryService = SalaryService();
+class SalaryProvider extends ChangeNotifier {
+  final ApiService _apiService = ApiService();
 
-  List<SalarySlip> _salarySlips = [];
-  CurrentMonthSummary? _currentMonthSummary;
+  // State variables
   bool _isLoading = false;
   String? _error;
+  bool _isInitialized = false;
+  bool _disposed = false;
+
+  // Data
+  List<SalarySlip> _salarySlips = [];
+  AttendanceSummary? _currentMonthAttendance;
+  EmployeeInfo? _employeeInfo;
+  double? _estimatedCurrentSalary;
+  YearlySummary? _yearlySummary;
 
   // Getters
-  List<SalarySlip> get salarySlips => _salarySlips;
-  CurrentMonthSummary? get currentMonthSummary => _currentMonthSummary;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isInitialized => _isInitialized;
+  List<SalarySlip> get salarySlips => _salarySlips;
+  AttendanceSummary? get currentMonthAttendance => _currentMonthAttendance;
+  EmployeeInfo? get employeeInfo => _employeeInfo;
+  double? get estimatedCurrentSalary => _estimatedCurrentSalary;
+  YearlySummary? get yearlySummary => _yearlySummary;
 
-  // Additional getters
-  SalarySlip? get latestSalarySlip => _salaryService.getLatestSalarySlip(_salarySlips);
-  double get averageMonthlySalary => _salaryService.calculateAverageMonthlyS (_salarySlips);
-
-  // Fetch salary data
-  Future<void> fetchSalaryData({int? year, int? month, int? limit}) async {
-    _isLoading = true;
+  // Main data fetching method
+  Future<void> fetchSalaryData({int? year, int? month}) async {
+    if (_disposed) return;
+    
+    debugPrint('💰 SalaryProvider: Fetching salary data...');
+    
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
-      final response = await _salaryService.getSalarySlips(
-        year: year,
-        month: month,
-        limit: limit,
-      );
+      final Map<String, String> queryParams = {};
+      if (year != null) queryParams['year'] = year.toString();
+      if (month != null) queryParams['month'] = month.toString();
 
+      final response = await _apiService.get(
+        'employee/salary.php', 
+        queryParams: queryParams,
+      );
+      
+      debugPrint('💰 SalaryProvider: Response received - ${response.success}');
+      
       if (response.success && response.data != null) {
-        _salarySlips = response.data!.salarySlips;
-        _currentMonthSummary = response.data!.currentMonthSummary;
-        _error = null;
+        await _processSuccessResponse(response.data);
+        _isInitialized = true;
+        debugPrint('✅ SalaryProvider: Data processed successfully');
       } else {
         _error = response.message;
+        debugPrint('❌ SalaryProvider: API returned error - $_error');
       }
     } catch (e) {
-      _error = 'Failed to fetch salary data: ${e.toString()}';
+      _error = 'Error fetching salary data: $e';
+      debugPrint('❌ SalaryProvider: Exception - $e');
+    } finally {
+      _setLoading(false);
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
-  // Get salary slip for specific month and year
-  SalarySlip? getSalarySlipForMonth(int year, int month) {
-    return _salaryService.getSalarySlipForMonth(_salarySlips, year, month);
-  }
+  // Process successful API response
+  Future<void> _processSuccessResponse(dynamic data) async {
+    try {
+      debugPrint('💰 SalaryProvider: Processing response data...');
+      
+      // Convert to Map if needed
+      Map<String, dynamic> responseData = data is Map<String, dynamic> ? data : {};
+      
+      // Process salary slips
+      if (responseData['salary_slips'] != null) {
+        _salarySlips = (responseData['salary_slips'] as List)
+            .map((item) => SalarySlip.fromJson(item))
+            .toList();
+        debugPrint('💰 SalaryProvider: Processed ${_salarySlips.length} salary slips');
+      } else {
+        _salarySlips = [];
+      }
 
-  // Calculate year-to-date earnings
-  double getYearToDateEarnings(int year) {
-    return _salaryService.calculateYearToDateEarnings(_salarySlips, year);
-  }
+      // Process current month attendance
+      if (responseData['current_month_attendance'] != null) {
+        _currentMonthAttendance = AttendanceSummary.fromJson(responseData['current_month_attendance']);
+        debugPrint('💰 SalaryProvider: Processed attendance summary');
+      }
 
-  // Get salary slips for a specific year
-  List<SalarySlip> getSalarySlipsForYear(int year) {
-    return _salaryService.getSalarySlipsForYear(_salarySlips, year);
-  }
+      // Process employee info
+      if (responseData['employee_info'] != null) {
+        _employeeInfo = EmployeeInfo.fromJson(responseData['employee_info']);
+        debugPrint('💰 SalaryProvider: Processed employee info');
+      }
 
-  // Get months with salary slips for a specific year
-  List<int> getMonthsWithSalary(int year) {
-    return _salaryService.getMonthsWithSalary(_salarySlips, year);
-  }
+      // Process estimated salary
+      _estimatedCurrentSalary = responseData['estimated_current_salary']?.toDouble();
+      debugPrint('💰 SalaryProvider: Estimated salary: $_estimatedCurrentSalary');
 
-  // Estimate current month salary
-  double estimateCurrentMonthSalary({
-    required double basicSalary,
-    required int approvedDays,
-    required int totalWorkingDays,
-  }) {
-    return _salaryService.estimateCurrentMonthSalary(
-      basicSalary: basicSalary,
-      approvedDays: approvedDays,
-      totalWorkingDays: totalWorkingDays,
-    );
-  }
+      // Process yearly summary
+      if (responseData['yearly_summary'] != null) {
+        _yearlySummary = YearlySummary.fromJson(responseData['yearly_summary']);
+        debugPrint('💰 SalaryProvider: Processed yearly summary');
+      }
 
-  // Get salary statistics
-  Map<String, dynamic> getSalaryStatistics() {
-    if (_salarySlips.isEmpty) {
-      return {
-        'totalSlips': 0,
-        'totalEarnings': 0.0,
-        'averageSalary': 0.0,
-        'highestSalary': 0.0,
-        'lowestSalary': 0.0,
-      };
+    } catch (e) {
+      debugPrint('❌ SalaryProvider: Error processing response - $e');
+      throw Exception('Error processing salary data: $e');
     }
-
-    final totalEarnings = _salarySlips.fold(0.0, (sum, slip) => sum + slip.netSalary);
-    final salaryAmounts = _salarySlips.map((slip) => slip.netSalary).toList();
-    salaryAmounts.sort();
-
-    return {
-      'totalSlips': _salarySlips.length,
-      'totalEarnings': totalEarnings,
-      'averageSalary': totalEarnings / _salarySlips.length,
-      'highestSalary': salaryAmounts.last,
-      'lowestSalary': salaryAmounts.first,
-    };
   }
 
-  // Get available years
-  List<int> getAvailableYears() {
+  // Get salary slip by month and year
+  SalarySlip? getSalarySlip(int month, int year) {
+    try {
+      return _salarySlips.firstWhere(
+        (slip) => slip.month == month && slip.year == year,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Get current year salary slips
+  List<SalarySlip> getCurrentYearSlips() {
+    final currentYear = DateTime.now().year;
+    return _salarySlips.where((slip) => slip.year == currentYear).toList();
+  }
+
+  // Calculate total earnings for year
+  double getTotalEarningsForYear(int year) {
     return _salarySlips
-        .map((slip) => slip.year)
-        .toSet()
-        .toList()
-      ..sort((a, b) => b.compareTo(a)); // Sort descending
+        .where((slip) => slip.year == year)
+        .fold(0.0, (sum, slip) => sum + slip.netSalary);
   }
 
   // Clear error
   void clearError() {
-    _error = null;
-    notifyListeners();
+    if (_error != null) {
+      _error = null;
+      _safeNotifyListeners();
+    }
   }
 
-  // Reset data
+  // Reset all data
   void reset() {
     _salarySlips.clear();
-    _currentMonthSummary = null;
+    _currentMonthAttendance = null;
+    _employeeInfo = null;
+    _estimatedCurrentSalary = null;
+    _yearlySummary = null;
     _error = null;
-    notifyListeners();
+    _isLoading = false;
+    _isInitialized = false;
+    _safeNotifyListeners();
+    debugPrint('💰 SalaryProvider: Data reset');
+  }
+
+  // Initialize if needed
+  Future<void> initializeIfNeeded() async {
+    if (!_isInitialized && !_isLoading) {
+      debugPrint('💰 SalaryProvider: Initializing salary data');
+      await fetchSalaryData(year: DateTime.now().year);
+    }
+  }
+
+  // Refresh data
+  Future<void> refresh() async {
+    debugPrint('💰 SalaryProvider: Refreshing salary data');
+    _isInitialized = false;
+    await fetchSalaryData(year: DateTime.now().year);
+  }
+
+  // Private helper methods
+  void _setLoading(bool loading) {
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _safeNotifyListeners() {
+    // Use addPostFrameCallback to avoid setState during build
+    if (!_disposed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) {
+          notifyListeners();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+    debugPrint('💰 SalaryProvider: Disposed');
+  }
+
+  // Debug method
+  void debugPrintState() {
+    debugPrint('💰 SalaryProvider State:');
+    debugPrint('  - Salary Slips: ${_salarySlips.length}');
+    debugPrint('  - Loading: $_isLoading');
+    debugPrint('  - Error: $_error');
+    debugPrint('  - Initialized: $_isInitialized');
+    debugPrint('  - Estimated Salary: $_estimatedCurrentSalary');
+    debugPrint('  - Current Attendance: ${_currentMonthAttendance?.totalDays ?? 'N/A'}');
   }
 }

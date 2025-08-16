@@ -1,23 +1,23 @@
-// lib/models/salary.dart
+// lib/models/salary_slip.dart
 class SalarySlip {
   final int id;
   final int employeeId;
   final int month;
   final int year;
   final double basicSalary;
-  final int presentDays;
   final int totalWorkingDays;
-  final double grossSalary;
-  final double deductions;
+  final int presentDays;
+  final double calculatedSalary;
+  final double totalHours;
   final double bonus;
   final double advance;
+  final double deductions;
   final double netSalary;
+  final String status;
   final String? generatedDate;
+  final DateTime createdAt;
   final String? employeeName;
   final String? employeeCode;
-  final double? currentBasicSalary;
-  final String? departmentName;
-  final String? createdAt;
 
   SalarySlip({
     required this.id,
@@ -25,125 +25,125 @@ class SalarySlip {
     required this.month,
     required this.year,
     required this.basicSalary,
-    required this.presentDays,
     required this.totalWorkingDays,
-    required this.grossSalary,
-    required this.deductions,
+    required this.presentDays,
+    required this.calculatedSalary,
+    required this.totalHours,
     required this.bonus,
     required this.advance,
+    required this.deductions,
     required this.netSalary,
+    required this.status,
     this.generatedDate,
+    required this.createdAt,
     this.employeeName,
     this.employeeCode,
-    this.currentBasicSalary,
-    this.departmentName,
-    this.createdAt,
   });
+
+  // Getter for UI compatibility
+  double get grossSalary => calculatedSalary;
 
   factory SalarySlip.fromJson(Map<String, dynamic> json) {
     return SalarySlip(
-      id: json['id'],
-      employeeId: json['employee_id'],
-      month: json['month'],
-      year: json['year'],
+      id: json['id'] ?? 0,
+      employeeId: json['employee_id'] ?? 0,
+      month: json['month'] ?? 0,
+      year: json['year'] ?? 0,
       basicSalary: (json['basic_salary'] ?? 0).toDouble(),
-      presentDays: json['present_days'] ?? 0,
       totalWorkingDays: json['total_working_days'] ?? 0,
-      grossSalary: (json['gross_salary'] ?? 0).toDouble(),
-      deductions: (json['deductions'] ?? 0).toDouble(),
+      presentDays: json['present_days'] ?? 0,
+      calculatedSalary: (json['calculated_salary'] ?? json['gross_salary'] ?? 0).toDouble(),
+      totalHours: (json['total_hours'] ?? 0).toDouble(),
       bonus: (json['bonus'] ?? 0).toDouble(),
       advance: (json['advance'] ?? 0).toDouble(),
+      deductions: (json['deductions'] ?? 0).toDouble(),
       netSalary: (json['net_salary'] ?? 0).toDouble(),
+      status: json['status'] ?? 'draft',
       generatedDate: json['generated_date'],
+      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
       employeeName: json['employee_name'],
       employeeCode: json['employee_code'],
-      currentBasicSalary: json['current_basic_salary']?.toDouble(),
-      departmentName: json['department_name'],
-      createdAt: json['created_at'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'employee_id': employeeId,
-      'month': month,
-      'year': year,
-      'basic_salary': basicSalary,
-      'present_days': presentDays,
-      'total_working_days': totalWorkingDays,
-      'gross_salary': grossSalary,
-      'deductions': deductions,
-      'bonus': bonus,
-      'advance': advance,
-      'net_salary': netSalary,
-      'generated_date': generatedDate,
-      'employee_name': employeeName,
-      'employee_code': employeeCode,
-      'current_basic_salary': currentBasicSalary,
-      'department_name': departmentName,
-      'created_at': createdAt,
-    };
-  }
-
-  String get monthName {
-    const months = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return months[month];
-  }
-}
-
-class SalaryResponse {
-  final List<SalarySlip> salarySlips;
-  final CurrentMonthSummary? currentMonthSummary;
-
-  SalaryResponse({
-    required this.salarySlips,
-    this.currentMonthSummary,
-  });
-
-  factory SalaryResponse.fromJson(Map<String, dynamic> json) {
-    return SalaryResponse(
-      salarySlips: (json['salary_slips'] as List)
-          .map((item) => SalarySlip.fromJson(item))
-          .toList(),
-      currentMonthSummary: json['current_month_summary'] != null
-          ? CurrentMonthSummary.fromJson(json['current_month_summary'])
-          : null,
     );
   }
 }
 
-class CurrentMonthSummary {
+// lib/models/attendance_summary.dart
+class AttendanceSummary {
   final int totalDays;
   final int approvedDays;
   final int pendingDays;
   final double totalHours;
 
-  CurrentMonthSummary({
+  AttendanceSummary({
     required this.totalDays,
     required this.approvedDays,
     required this.pendingDays,
     required this.totalHours,
   });
 
-  factory CurrentMonthSummary.fromJson(Map<String, dynamic> json) {
-    return CurrentMonthSummary(
+  factory AttendanceSummary.fromJson(Map<String, dynamic> json) {
+    return AttendanceSummary(
       totalDays: json['total_days'] ?? 0,
       approvedDays: json['approved_days'] ?? 0,
       pendingDays: json['pending_days'] ?? 0,
       totalHours: (json['total_hours'] ?? 0).toDouble(),
     );
   }
+}
 
-  Map<String, dynamic> toJson() {
-    return {
-      'total_days': totalDays,
-      'approved_days': approvedDays,
-      'pending_days': pendingDays,
-      'total_hours': totalHours,
-    };
+// lib/models/employee_info.dart
+class EmployeeInfo {
+  final double basicSalary;
+  final double dailyWage;
+  final String name;
+  final String employeeCode;
+  final String departmentName;
+  final String? epfNumber;
+
+  EmployeeInfo({
+    required this.basicSalary,
+    required this.dailyWage,
+    required this.name,
+    required this.employeeCode,
+    required this.departmentName,
+    this.epfNumber,
+  });
+
+  factory EmployeeInfo.fromJson(Map<String, dynamic> json) {
+    return EmployeeInfo(
+      basicSalary: (json['basic_salary'] ?? 0).toDouble(),
+      dailyWage: (json['daily_wage'] ?? 0).toDouble(),
+      name: json['name'] ?? '',
+      employeeCode: json['employee_code'] ?? '',
+      departmentName: json['department_name'] ?? 'No Department',
+      epfNumber: json['epf_number'],
+    );
+  }
+}
+
+// lib/models/yearly_summary.dart
+class YearlySummary {
+  final double totalEarned;
+  final double totalDeductions;
+  final double totalBonus;
+  final int totalMonths;
+  final double avgMonthlySalary;
+
+  YearlySummary({
+    required this.totalEarned,
+    required this.totalDeductions,
+    required this.totalBonus,
+    required this.totalMonths,
+    required this.avgMonthlySalary,
+  });
+
+  factory YearlySummary.fromJson(Map<String, dynamic> json) {
+    return YearlySummary(
+      totalEarned: (json['total_earned'] ?? 0).toDouble(),
+      totalDeductions: (json['total_deductions'] ?? 0).toDouble(),
+      totalBonus: (json['total_bonus'] ?? 0).toDouble(),
+      totalMonths: json['total_months'] ?? 0,
+      avgMonthlySalary: (json['avg_monthly_salary'] ?? 0).toDouble(),
+    );
   }
 }

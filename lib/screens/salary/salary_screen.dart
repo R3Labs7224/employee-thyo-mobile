@@ -1,12 +1,13 @@
-import 'package:ems/providers/salary_provider.dart';
-import 'package:ems/widgets/salary/salary_slip_card.dart';
+// lib/screens/salary/salary_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../../providers/salary_provider.dart';
 import '../../config/theme.dart';
 import '../../widgets/common/custom_app_bar.dart';
 import '../../widgets/common/custom_card.dart';
 import '../../widgets/common/loading_widget.dart';
+import '../../widgets/salary/salary_slip_card.dart';
 import '../../utils/helpers.dart';
 
 class SalaryScreen extends StatefulWidget {
@@ -17,12 +18,17 @@ class SalaryScreen extends StatefulWidget {
 }
 
 class _SalaryScreenState extends State<SalaryScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  
   late TabController _tabController;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
   int _selectedYear = DateTime.now().year;
+  bool _isInitialized = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -36,8 +42,10 @@ class _SalaryScreenState extends State<SalaryScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
     );
 
-    _animationController.forward();
-    _loadSalaryData();
+    // FIXED: Use addPostFrameCallback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeSalaryScreen();
+    });
   }
 
   @override
@@ -47,13 +55,46 @@ class _SalaryScreenState extends State<SalaryScreen>
     super.dispose();
   }
 
+  // FIXED: Separate initialization method to avoid setState during build
+  Future<void> _initializeSalaryScreen() async {
+    if (_isInitialized) return;
+    
+    debugPrint('💰 SalaryScreen: Initializing...');
+    
+    try {
+      final salaryProvider = Provider.of<SalaryProvider>(context, listen: false);
+      
+      // Initialize the provider if needed
+      await salaryProvider.initializeIfNeeded();
+      
+      // Start animation after data is loaded
+      if (mounted) {
+        _animationController.forward();
+        
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+      
+      debugPrint('✅ SalaryScreen: Initialization complete');
+    } catch (e) {
+      debugPrint('❌ SalaryScreen: Initialization error - $e');
+    }
+  }
+
   Future<void> _loadSalaryData() async {
+    if (!mounted) return;
+    
+    debugPrint('🔄 SalaryScreen: Loading salary data for year: $_selectedYear');
+    
     final provider = Provider.of<SalaryProvider>(context, listen: false);
     await provider.fetchSalaryData(year: _selectedYear);
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     return Scaffold(
       appBar: CustomAppBar(
         title: 'Salary Information',
@@ -64,25 +105,27 @@ class _SalaryScreenState extends State<SalaryScreen>
           ),
         ],
       ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Column(
-          children: [
-            _buildYearSelector(),
-            _buildTabBar(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
+      body: _isInitialized 
+          ? FadeTransition(
+              opacity: _fadeAnimation,
+              child: Column(
                 children: [
-                  _buildCurrentMonthTab(),
-                  _buildSalarySlipsTab(),
-                  _buildSummaryTab(),
+                  _buildYearSelector(),
+                  _buildTabBar(),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildCurrentMonthTab(),
+                        _buildSalarySlipsTab(),
+                        _buildSummaryTab(),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ],
-        ),
-      ),
+            )
+          : const LoadingWidget(),
     );
   }
 
@@ -95,20 +138,36 @@ class _SalaryScreenState extends State<SalaryScreen>
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-               Icon(Icons.calendar_view_month_rounded, color: AppTheme.primaryColor),
+              Icon(Icons.calendar_view_month_rounded, color: AppTheme.primaryColor),
               const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Year: $_selectedYear',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              const Text(
+                'Year:',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              IconButton(
-                onPressed: () => _selectYear(),
-                icon: const Icon(Icons.keyboard_arrow_down),
+              const SizedBox(width: 16),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _selectedYear,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  items: List.generate(5, (index) {
+                    final year = DateTime.now().year - index;
+                    return DropdownMenuItem<int>(
+                      value: year,
+                      child: Text(year.toString()),
+                    );
+                  }),
+                  onChanged: (value) {
+                    if (value != null && value != _selectedYear) {
+                      setState(() {
+                        _selectedYear = value;
+                      });
+                      _loadSalaryData();
+                    }
+                  },
+                ),
               ),
             ],
           ),
@@ -118,16 +177,19 @@ class _SalaryScreenState extends State<SalaryScreen>
   }
 
   Widget _buildTabBar() {
-    return TabBar(
-      controller: _tabController,
-      labelColor: AppTheme.primaryColor,
-      unselectedLabelColor: Colors.grey,
-      indicatorColor: AppTheme.primaryColor,
-      tabs: const [
-        Tab(text: 'Current'),
-        Tab(text: 'History'),
-        Tab(text: 'Summary'),
-      ],
+    return Container(
+      color: AppTheme.surfaceColor,
+      child: TabBar(
+        controller: _tabController,
+        labelColor: AppTheme.primaryColor,
+        unselectedLabelColor: Colors.grey,
+        indicatorColor: AppTheme.primaryColor,
+        tabs: const [
+          Tab(text: 'Current Month'),
+          Tab(text: 'Salary Slips'),
+          Tab(text: 'Summary'),
+        ],
+      ),
     );
   }
 
@@ -144,17 +206,18 @@ class _SalaryScreenState extends State<SalaryScreen>
 
         return RefreshIndicator(
           onRefresh: _loadSalaryData,
-          child: ListView(
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
-            children: [
-              _buildCurrentMonthCard(provider),
-              const SizedBox(height: 16),
-              _buildEstimatedSalaryCard(provider),
-              const SizedBox(height: 16),
-              _buildAttendanceBreakdown(provider),
-              const SizedBox(height: 16),
-              _buildEmployeeInfoCard(provider),
-            ],
+            child: Column(
+              children: [
+                _buildEstimatedSalaryCard(provider),
+                const SizedBox(height: 16),
+                _buildAttendanceBreakdown(provider),
+                const SizedBox(height: 16),
+                _buildEmployeeInfoCard(provider),
+              ],
+            ),
           ),
         );
       },
@@ -242,126 +305,71 @@ class _SalaryScreenState extends State<SalaryScreen>
 
         return RefreshIndicator(
           onRefresh: _loadSalaryData,
-          child: ListView(
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
-            children: [
-              _buildYearlySummaryCard(provider),
-              const SizedBox(height: 16),
-              _buildMonthlyBreakdown(provider),
-            ],
+            child: Column(
+              children: [
+                _buildYearlySummaryCard(provider),
+                const SizedBox(height: 16),
+                _buildMonthlyBreakdownCard(provider),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildCurrentMonthCard(provider) {
-    final currentMonth = DateFormat('MMMM yyyy').format(DateTime.now());
-    
-    return CustomCard(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+  Widget _buildErrorWidget(String error) {
+    return RefreshIndicator(
+      onRefresh: _loadSalaryData,
+      child: ListView(
+        children: [
+          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+          Center(
+            child: Column(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.calendar_month,
-                    color: AppTheme.primaryColor,
+                Icon(
+                  Icons.error_outline,
+                  size: 64,
+                  color: Colors.red[400],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Error Loading Data',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.red[600],
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        currentMonth,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'Current month progress',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    error,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.red[500],
+                      fontSize: 14,
+                    ),
                   ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _loadSalaryData,
+                  child: const Text('Retry'),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            if (provider.currentMonthAttendance != null) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoTile(
-                      'Working Days',
-                      '${provider.currentMonthAttendance!.approvedDays}/${provider.currentMonthAttendance!.totalDays}',
-                      Icons.calendar_today,
-                      AppTheme.primaryColor,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildInfoTile(
-                      'Total Hours',
-                      '${provider.currentMonthAttendance!.totalHours.toStringAsFixed(1)}h',
-                      Icons.schedule,
-                      AppTheme.accentColor,
-                    ),
-                  ),
-                ],
-              ),
-              if (provider.currentMonthAttendance!.pendingDays > 0) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.pending,
-                        color: Colors.orange[700],
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${provider.currentMonthAttendance!.pendingDays} day${provider.currentMonthAttendance!.pendingDays > 1 ? 's' : ''} pending approval',
-                          style: TextStyle(
-                            color: Colors.orange[700],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildEstimatedSalaryCard(provider) {
+  Widget _buildEstimatedSalaryCard(SalaryProvider provider) {
     return CustomCard(
       child: Container(
         padding: const EdgeInsets.all(20),
@@ -440,7 +448,7 @@ class _SalaryScreenState extends State<SalaryScreen>
     );
   }
 
-  Widget _buildAttendanceBreakdown(provider) {
+  Widget _buildAttendanceBreakdown(SalaryProvider provider) {
     return CustomCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -470,6 +478,38 @@ class _SalaryScreenState extends State<SalaryScreen>
                   provider.currentMonthAttendance!.totalDays,
                   Colors.orange,
                 ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildInfoTile(
+                      'Total Hours',
+                      '${provider.currentMonthAttendance!.totalHours.toStringAsFixed(1)}h',
+                      Icons.access_time,
+                      AppTheme.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildInfoTile(
+                      'Pending Days',
+                      '${provider.currentMonthAttendance!.pendingDays} day${provider.currentMonthAttendance!.pendingDays != 1 ? 's' : ''} pending approval',
+                      Icons.pending,
+                      provider.currentMonthAttendance!.pendingDays > 0 
+                          ? AppTheme.errorColor 
+                          : AppTheme.successColor,
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Text(
+                'No attendance data available',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
             ],
           ],
         ),
@@ -509,7 +549,7 @@ class _SalaryScreenState extends State<SalaryScreen>
     );
   }
 
-  Widget _buildEmployeeInfoCard(provider) {
+  Widget _buildEmployeeInfoCard(SalaryProvider provider) {
     return CustomCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -530,6 +570,14 @@ class _SalaryScreenState extends State<SalaryScreen>
                 _buildInfoRow('Daily Wage', Helpers.formatCurrency(provider.employeeInfo!.dailyWage)),
               if (provider.employeeInfo!.epfNumber != null)
                 _buildInfoRow('EPF Number', provider.employeeInfo!.epfNumber!),
+            ] else ...[
+              Text(
+                'No employee information available',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
             ],
           ],
         ),
@@ -537,7 +585,7 @@ class _SalaryScreenState extends State<SalaryScreen>
     );
   }
 
-  Widget _buildYearlySummaryCard(provider) {
+  Widget _buildYearlySummaryCard(SalaryProvider provider) {
     return CustomCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -566,20 +614,43 @@ class _SalaryScreenState extends State<SalaryScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     child: _buildInfoTile(
+                      'Total Deductions',
+                      Helpers.formatCurrency(provider.yearlySummary!.totalDeductions),
+                      Icons.remove_circle_outline,
+                      AppTheme.errorColor,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildInfoTile(
+                      'Total Bonus',
+                      Helpers.formatCurrency(provider.yearlySummary!.totalBonus),
+                      Icons.add_circle_outline,
+                      AppTheme.accentColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildInfoTile(
                       'Months Paid',
-                      provider.yearlySummary!.monthsPaid.toString(),
+                      '${provider.yearlySummary!.totalMonths}',
                       Icons.calendar_month,
                       AppTheme.primaryColor,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              _buildInfoTile(
-                'Average Monthly',
-                Helpers.formatCurrency(provider.yearlySummary!.avgMonthlySalary),
-                Icons.trending_up,
-                AppTheme.accentColor,
+            ] else ...[
+              Text(
+                'No yearly summary available',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
           ],
@@ -588,56 +659,71 @@ class _SalaryScreenState extends State<SalaryScreen>
     );
   }
 
-  Widget _buildMonthlyBreakdown(provider) {
-    if (provider.salarySlips.isEmpty) {
-      return CustomCard(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Center(
-            child: Text(
-              'No salary data available for breakdown',
-              style: TextStyle(
-                color: Colors.grey[600],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
+  Widget _buildMonthlyBreakdownCard(SalaryProvider provider) {
     return CustomCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Monthly Breakdown',
-              style: TextStyle(
+            Text(
+              'Monthly Breakdown - $_selectedYear',
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 16),
-            ...provider.salarySlips.take(6).map((slip) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
+            if (provider.salarySlips.isNotEmpty) ...[
+              ...provider.getCurrentYearSlips().map((slip) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      DateFormat.MMMM().format(DateTime(slip.year, slip.month)),
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    Text(
+                      Helpers.formatCurrency(slip.netSalary),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.successColor,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+              const Divider(),
+              Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    DateFormat('MMM yyyy').format(DateTime(slip.year, slip.month)),
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                  Text(
-                    Helpers.formatCurrency(slip.netSalary),
+                  const Text(
+                    'Total for Year',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: slip.status == 'paid' ? AppTheme.successColor : Colors.orange,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text(
+                    Helpers.formatCurrency(provider.getTotalEarningsForYear(_selectedYear)),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: AppTheme.successColor,
                     ),
                   ),
                 ],
               ),
-            )),
+            ] else ...[
+              Text(
+                'No salary data available for $_selectedYear',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -709,127 +795,33 @@ class _SalaryScreenState extends State<SalaryScreen>
     );
   }
 
-  Widget _buildErrorWidget(String error) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            'Error Loading Salary Data',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            error,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _loadSalaryData,
-            child: const Text('Retry'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _selectYear() {
+  void _showSalarySlipDetails(salarySlip) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Year'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: 5,
-            itemBuilder: (context, index) {
-              final year = DateTime.now().year - index;
-              return ListTile(
-                title: Text(year.toString()),
-                selected: year == _selectedYear,
-                onTap: () {
-                  setState(() {
-                    _selectedYear = year;
-                  });
-                  Navigator.pop(context);
-                  _loadSalaryData();
-                },
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showSalarySlipDetails(salarySlip) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
+        title: Text('Salary Slip - ${DateFormat.MMMM().format(DateTime(salarySlip.year, salarySlip.month))} ${salarySlip.year}'),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Salary Slip - ${DateFormat('MMM yyyy').format(DateTime(salarySlip.year, salarySlip.month))}',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildDetailRow('Basic Salary', Helpers.formatCurrency(salarySlip.basicSalary)),
-            _buildDetailRow('Working Days', '${salarySlip.presentDays}/${salarySlip.totalWorkingDays}'),
-            _buildDetailRow('Calculated Salary', Helpers.formatCurrency(salarySlip.calculatedSalary)),
+            _buildInfoRow('Basic Salary', Helpers.formatCurrency(salarySlip.basicSalary)),
+            _buildInfoRow('Present Days', '${salarySlip.presentDays}'),
+            _buildInfoRow('Total Hours', '${salarySlip.totalHours.toStringAsFixed(1)}h'),
+            _buildInfoRow('Gross Salary', Helpers.formatCurrency(salarySlip.grossSalary)),
             if (salarySlip.bonus > 0)
-              _buildDetailRow('Bonus', Helpers.formatCurrency(salarySlip.bonus)),
+              _buildInfoRow('Bonus', Helpers.formatCurrency(salarySlip.bonus)),
             if (salarySlip.advance > 0)
-              _buildDetailRow('Advance', Helpers.formatCurrency(salarySlip.advance)),
+              _buildInfoRow('Advance', Helpers.formatCurrency(salarySlip.advance)),
             if (salarySlip.deductions > 0)
-              _buildDetailRow('Deductions', Helpers.formatCurrency(salarySlip.deductions)),
+              _buildInfoRow('Deductions', Helpers.formatCurrency(salarySlip.deductions)),
             const Divider(),
-            _buildDetailRow('Net Salary', Helpers.formatCurrency(salarySlip.netSalary), isTotal: true),
-            _buildDetailRow('Status', salarySlip.status.toUpperCase()),
+            _buildInfoRow('Net Salary', Helpers.formatCurrency(salarySlip.netSalary)),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value, {bool isTotal = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
-              color: isTotal ? Colors.black : Colors.grey[600],
-              fontSize: isTotal ? 16 : 14,
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: isTotal ? 16 : 14,
-              color: isTotal ? AppTheme.successColor : Colors.black87,
-            ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
