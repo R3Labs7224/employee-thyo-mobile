@@ -1,3 +1,4 @@
+// lib/screens/petty_cash/petty_cash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -37,7 +38,11 @@ class _PettyCashScreenState extends State<PettyCashScreen>
     );
 
     _animationController.forward();
-    _loadPettyCash();
+    
+    // Initialize data loading
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadPettyCash();
+    });
   }
 
   @override
@@ -47,9 +52,17 @@ class _PettyCashScreenState extends State<PettyCashScreen>
     super.dispose();
   }
 
+  // FIXED: Complete implementation of data loading
   Future<void> _loadPettyCash() async {
     final provider = Provider.of<PettyCashProvider>(context, listen: false);
-    await provider.fetchPettyCashRequests();
+    
+    try {
+      // Fetch petty cash requests for the selected month
+      await provider.fetchPettyCashRequestsForMonth(_selectedMonth);
+    } catch (e) {
+      // Error handling is managed by the provider
+      debugPrint('Error loading petty cash data: $e');
+    }
   }
 
   @override
@@ -59,86 +72,46 @@ class _PettyCashScreenState extends State<PettyCashScreen>
         title: 'Petty Cash',
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.createRequest),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadPettyCash,
+            icon: const Icon(Icons.calendar_month),
+            onPressed: _selectMonth,
+            tooltip: 'Select Month',
           ),
         ],
+        // bottom: TabBar(
+        //   controller: _tabController,
+        //   tabs: const [
+        //     Tab(text: 'Overview'),
+        //     Tab(text: 'Requests'),
+        //   ],
+        // ),
       ),
       body: FadeTransition(
         opacity: _fadeAnimation,
-        child: Column(
+        child: TabBarView(
+          controller: _tabController,
           children: [
-            _buildMonthSelector(),
-            _buildTabBar(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildSummaryTab(),
-                  _buildRequestsTab(),
-                ],
-              ),
-            ),
+            _buildOverviewTab(),
+            _buildRequestsTab(),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.createRequest),
+        onPressed: () {
+          Navigator.pushNamed(context, AppRoutes.pettyCash)
+              .then((result) {
+            if (result == true) {
+              // Refresh data if request was created successfully
+              _loadPettyCash();
+            }
+          });
+        },
         backgroundColor: AppTheme.primaryColor,
-        child: const Icon(Icons.add, color: Colors.white),
+        child: const Icon(Icons.add),
       ),
     );
   }
 
-  Widget _buildMonthSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: AppTheme.surfaceColor,
-      child: CustomCard(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const Icon(Icons.calendar_month, color: AppTheme.primaryColor),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  DateFormat('MMMM yyyy').format(DateTime.parse('$_selectedMonth-01')),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: () => _selectMonth(),
-                icon: const Icon(Icons.keyboard_arrow_down),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabBar() {
-    return TabBar(
-      controller: _tabController,
-      labelColor: AppTheme.primaryColor,
-      unselectedLabelColor: Colors.grey,
-      indicatorColor: AppTheme.primaryColor,
-      tabs: const [
-        Tab(text: 'Summary'),
-        Tab(text: 'Requests'),
-      ],
-    );
-  }
-
-  Widget _buildSummaryTab() {
+  Widget _buildOverviewTab() {
     return Consumer<PettyCashProvider>(
       builder: (context, provider, _) {
         if (provider.isLoading) {
@@ -154,13 +127,22 @@ class _PettyCashScreenState extends State<PettyCashScreen>
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // Month selector
+              _buildMonthSelector(),
+              const SizedBox(height: 16),
+              
+              // Summary cards
               if (provider.summary != null) ...[
                 _buildSummaryCards(provider.summary!),
                 const SizedBox(height: 16),
               ],
+              
+              // Create request card
               _buildCreateRequestCard(),
               const SizedBox(height: 16),
-              _buildQuickStats(provider),
+              
+              // Recent requests
+              _buildRecentRequests(provider),
             ],
           ),
         );
@@ -204,7 +186,7 @@ class _PettyCashScreenState extends State<PettyCashScreen>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Your petty cash requests will appear here',
+                        'Tap the + button to create your first request',
                         style: TextStyle(
                           color: Colors.grey[500],
                           fontSize: 14,
@@ -222,14 +204,65 @@ class _PettyCashScreenState extends State<PettyCashScreen>
           onRefresh: _loadPettyCash,
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: provider.requests.length,
+            itemCount: provider.requests.length + 1, // +1 for month selector
             itemBuilder: (context, index) {
-              final request = provider.requests[index];
+              if (index == 0) {
+                return Column(
+                  children: [
+                    _buildMonthSelector(),
+                    const SizedBox(height: 16),
+                  ],
+                );
+              }
+              
+              final request = provider.requests[index - 1];
               return _buildRequestCard(request);
             },
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMonthSelector() {
+    return CustomCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_month,
+              color: AppTheme.primaryColor,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Selected Month',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  Text(
+                    DateFormat('MMMM yyyy').format(DateTime.parse('$_selectedMonth-01')),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: _selectMonth,
+              child: const Text('Change'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -248,20 +281,20 @@ class _PettyCashScreenState extends State<PettyCashScreen>
         Row(
           children: [
             Expanded(
-              child: _buildStatCard(
+              child: _buildSummaryCard(
                 'Total Requests',
                 summary.totalRequests.toString(),
                 Icons.receipt,
-                AppTheme.primaryColor,
+                Colors.blue,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildStatCard(
+              child: _buildSummaryCard(
                 'Total Amount',
                 Helpers.formatCurrency(summary.totalAmount),
-                Icons.currency_rupee,
-                AppTheme.accentColor,
+                Icons.account_balance_wallet,
+                Colors.purple,
               ),
             ),
           ],
@@ -270,16 +303,16 @@ class _PettyCashScreenState extends State<PettyCashScreen>
         Row(
           children: [
             Expanded(
-              child: _buildStatCard(
+              child: _buildSummaryCard(
                 'Approved',
                 Helpers.formatCurrency(summary.approvedAmount),
                 Icons.check_circle,
-                AppTheme.successColor,
+                Colors.green,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildStatCard(
+              child: _buildSummaryCard(
                 'Pending',
                 Helpers.formatCurrency(summary.pendingAmount),
                 Icons.pending,
@@ -288,20 +321,11 @@ class _PettyCashScreenState extends State<PettyCashScreen>
             ),
           ],
         ),
-        if (summary.rejectedAmount > 0) ...[
-          const SizedBox(height: 12),
-          _buildStatCard(
-            'Rejected Amount',
-            Helpers.formatCurrency(summary.rejectedAmount),
-            Icons.cancel,
-            Colors.red,
-          ),
-        ],
       ],
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildSummaryCard(String title, String value, IconData icon, Color color) {
     return CustomCard(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -309,19 +333,26 @@ class _PettyCashScreenState extends State<PettyCashScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                Icon(
+                  icon,
+                  color: color,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                Icon(icon, color: color, size: 20),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
               value,
               style: TextStyle(
@@ -338,32 +369,28 @@ class _PettyCashScreenState extends State<PettyCashScreen>
 
   Widget _buildCreateRequestCard() {
     return CustomCard(
-      onTap: () => Navigator.pushNamed(context, AppRoutes.createRequest),
-      child: Container(
+      onTap: () {
+        Navigator.pushNamed(context, AppRoutes.pettyCash)
+            .then((result) {
+          if (result == true) {
+            _loadPettyCash();
+          }
+        });
+      },
+      child: Padding(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: LinearGradient(
-            colors: [
-              AppTheme.primaryColor.withOpacity(0.1),
-              AppTheme.accentColor.withOpacity(0.1),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.primaryColor,
+                color: AppTheme.primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
-                Icons.add_card,
-                color: Colors.white,
-                size: 24,
+              child: Icon(
+                Icons.add_circle_outline,
+                color: AppTheme.primaryColor,
+                size: 32,
               ),
             ),
             const SizedBox(width: 16),
@@ -371,17 +398,16 @@ class _PettyCashScreenState extends State<PettyCashScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'New Petty Cash Request',
+                  const Text(
+                    'Create New Request',
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryColor,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Submit a new expense request',
+                    'Submit a new petty cash request',
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 14,
@@ -401,18 +427,30 @@ class _PettyCashScreenState extends State<PettyCashScreen>
     );
   }
 
-  Widget _buildQuickStats(PettyCashProvider provider) {
+  Widget _buildRecentRequests(PettyCashProvider provider) {
     final recentRequests = provider.requests.take(3).toList();
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Recent Requests',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Recent Requests',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (provider.requests.length > 3)
+              TextButton(
+                onPressed: () {
+                  _tabController.animateTo(1); // Switch to Requests tab
+                },
+                child: const Text('View All'),
+              ),
+          ],
         ),
         const SizedBox(height: 12),
         if (recentRequests.isEmpty)
@@ -420,11 +458,22 @@ class _PettyCashScreenState extends State<PettyCashScreen>
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: Center(
-                child: Text(
-                  'No recent requests',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                  ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.receipt_long,
+                      size: 48,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No recent requests',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -461,36 +510,19 @@ class _PettyCashScreenState extends State<PettyCashScreen>
             Text(
               request.reason,
               style: TextStyle(
-                color: Colors.grey[600],
+                color: Colors.grey[700],
                 fontSize: 14,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 16,
-                  color: Colors.grey[500],
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  Helpers.formatDate(DateTime.parse(request.requestDate)),
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                ),
-                const Spacer(),
-                if (request.receiptImage != null)
-                  Icon(
-                    Icons.attach_file,
-                    size: 16,
-                    color: Colors.grey[500],
-                  ),
-              ],
+            const SizedBox(height: 8),
+            Text(
+              'Date: ${Helpers.formatDate(DateTime.parse(request.requestDate))}',
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -499,34 +531,38 @@ class _PettyCashScreenState extends State<PettyCashScreen>
   }
 
   Widget _buildStatusChip(String status) {
-    Color chipColor;
+    Color color;
+    String text;
+    
     switch (status.toLowerCase()) {
       case 'approved':
-        chipColor = AppTheme.successColor;
-        break;
-      case 'pending':
-        chipColor = Colors.orange;
+        color = Colors.green;
+        text = 'Approved';
         break;
       case 'rejected':
-        chipColor = Colors.red;
+        color = Colors.red;
+        text = 'Rejected';
         break;
+      case 'pending':
       default:
-        chipColor = Colors.grey;
+        color = Colors.orange;
+        text = 'Pending';
+        break;
     }
-
+    
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: chipColor.withOpacity(0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: chipColor.withOpacity(0.3)),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Text(
-        status.toUpperCase(),
+        text,
         style: TextStyle(
-          color: chipColor,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -537,7 +573,11 @@ class _PettyCashScreenState extends State<PettyCashScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error, size: 64, color: Colors.grey[400]),
+          Icon(
+            Icons.error_outline,
+            size: 64,
+            color: Colors.grey[400],
+          ),
           const SizedBox(height: 16),
           Text(
             'Error Loading Data',
@@ -574,10 +614,14 @@ class _PettyCashScreenState extends State<PettyCashScreen>
       lastDate: DateTime.now(),
     ).then((selectedDate) {
       if (selectedDate != null) {
-        setState(() {
-          _selectedMonth = DateFormat('yyyy-MM').format(selectedDate);
-        });
-        _loadPettyCash();
+        final newMonth = DateFormat('yyyy-MM').format(selectedDate);
+        if (newMonth != _selectedMonth) {
+          setState(() {
+            _selectedMonth = newMonth;
+          });
+          // Load data for the new month
+          _loadPettyCash();
+        }
       }
     });
   }
@@ -586,30 +630,65 @@ class _PettyCashScreenState extends State<PettyCashScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Request Details',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+            
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Request Details',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                _buildStatusChip(request.status),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
             _buildDetailRow('Amount', Helpers.formatCurrency(request.amount)),
             _buildDetailRow('Reason', request.reason),
             _buildDetailRow('Request Date', Helpers.formatDate(DateTime.parse(request.requestDate))),
-            _buildDetailRow('Status', request.status.toUpperCase()),
+            
             if (request.approvedByName != null)
               _buildDetailRow('Approved By', request.approvedByName!),
             if (request.approvalDate != null)
               _buildDetailRow('Approval Date', Helpers.formatDate(DateTime.parse(request.approvalDate!))),
-            if (request.notes != null && request.notes!.isNotEmpty)
-              _buildDetailRow('Notes', request.notes!),
+            if (request.remarks != null && request.remarks!.isNotEmpty)
+              _buildDetailRow('Remarks', request.remarks!),
+              
+            const SizedBox(height: 20),
+            
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ),
           ],
         ),
       ),
@@ -618,24 +697,27 @@ class _PettyCashScreenState extends State<PettyCashScreen>
 
   Widget _buildDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 100,
             child: Text(
-              '$label:',
+              label,
               style: TextStyle(
                 fontWeight: FontWeight.w500,
                 color: Colors.grey[600],
               ),
             ),
           ),
+          const Text(': '),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ),
         ],

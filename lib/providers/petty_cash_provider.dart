@@ -10,12 +10,14 @@ class PettyCashProvider with ChangeNotifier {
   PettyCashSummary? _summary;
   bool _isLoading = false;
   String? _error;
+  bool _isInitialized = false;
 
   // Getters
   List<PettyCashRequest> get requests => _requests;
   PettyCashSummary? get summary => _summary;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isInitialized => _isInitialized;
 
   // Filter getters
   List<PettyCashRequest> get pendingRequests => 
@@ -32,9 +34,6 @@ class PettyCashProvider with ChangeNotifier {
   double get approvedAmount => _pettyCashService.getApprovedAmount(_requests);
   double get totalRequestedAmount => _pettyCashService.getTotalRequestedAmount(_requests);
 
-   bool _isInitialized = false;
-  bool get isInitialized => _isInitialized;
-
   Future<void> initializeIfNeeded() async {
     if (!_isInitialized && !_isLoading) {
       await fetchPettyCashRequests();
@@ -48,21 +47,60 @@ class PettyCashProvider with ChangeNotifier {
     _isInitialized = true;
   }
 
-  // Update existing fetchPettyCashRequests method to set initialized flag
-  Future<void> fetchPettyCashRequests() async {
+  // FIXED: Complete implementation of fetchPettyCashRequests method
+  Future<void> fetchPettyCashRequests({String? month}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // ... existing fetch logic ...
-      _isInitialized = true;
+      debugPrint('🔄 Fetching petty cash requests for month: ${month ?? 'current'}');
+      
+      // Call the actual API service to fetch petty cash requests
+      final response = await _pettyCashService.getPettyCashRequests(month: month);
+
+      if (response.success && response.data != null) {
+        // Extract the data from the API response
+        final pettyCashResponse = response.data!;
+        
+        // Update the requests list
+        _requests = pettyCashResponse.requests;
+        
+        // Update the summary if available
+        _summary = pettyCashResponse.summary;
+        
+        // Clear any previous errors
+        _error = null;
+        
+        // Mark as initialized
+        _isInitialized = true;
+        
+        debugPrint('✅ Petty cash data loaded successfully: ${_requests.length} requests');
+        debugPrint('📊 Summary - Total: ${_summary?.totalRequests}, Approved: \${_summary?.approvedAmount}');
+      } else {
+        // Handle API error response
+        _error = response.message ?? 'Failed to fetch petty cash requests';
+        _requests = [];
+        _summary = null;
+        
+        debugPrint('❌ API Error: $_error');
+      }
     } catch (e) {
+      // Handle unexpected errors
       _error = 'Failed to fetch petty cash requests: ${e.toString()}';
+      _requests = [];
+      _summary = null;
+      
+      debugPrint('💥 Exception in fetchPettyCashRequests: $e');
     }
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  // Fetch requests for a specific month
+  Future<void> fetchPettyCashRequestsForMonth(String month) async {
+    await fetchPettyCashRequests(month: month);
   }
 
   // Submit new petty cash request
@@ -85,7 +123,7 @@ class PettyCashProvider with ChangeNotifier {
       );
 
       if (response.success) {
-        // Refresh requests
+        // Refresh requests after successful submission
         await fetchPettyCashRequests();
         _isLoading = false;
         notifyListeners();
@@ -127,6 +165,26 @@ class PettyCashProvider with ChangeNotifier {
     }).toList();
   }
 
+  // Get requests by status
+  List<PettyCashRequest> getRequestsByStatus(String status) {
+    return _pettyCashService.filterByStatus(_requests, status);
+  }
+
+  // Get total amount for status
+  double getTotalAmountByStatus(String status) {
+    final filteredRequests = getRequestsByStatus(status);
+    return filteredRequests.fold(0.0, (sum, request) => sum + request.amount);
+  }
+
+  // Check if there are any pending requests
+  bool get hasPendingRequests => pendingCount > 0;
+
+  // Get latest request
+  PettyCashRequest? get latestRequest {
+    if (_requests.isEmpty) return null;
+    return _requests.first; // Assuming requests are ordered by date DESC
+  }
+
   // Clear error
   void clearError() {
     _error = null;
@@ -138,6 +196,12 @@ class PettyCashProvider with ChangeNotifier {
     _requests.clear();
     _summary = null;
     _error = null;
+    _isInitialized = false;
     notifyListeners();
+  }
+
+  // Force refresh - bypasses initialization check
+  Future<void> forceRefresh() async {
+    await fetchPettyCashRequests();
   }
 }
