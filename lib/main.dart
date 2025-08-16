@@ -1,63 +1,28 @@
-// lib/main.dart - Complete updated version
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-// Providers
+import 'app.dart';
 import 'providers/auth_provider.dart';
 import 'providers/attendance_provider.dart';
 import 'providers/task_provider.dart';
 import 'providers/petty_cash_provider.dart';
 import 'providers/employee_provider.dart';
 import 'providers/salary_provider.dart';
-import 'providers/site_provider.dart';
-
-// Config
-import 'config/routes.dart';
-import 'config/theme.dart';
-
-// Screens
-import 'screens/auth/login_screen.dart';
-import 'screens/home/main_home_layout.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiProvider(
+  runApp(
+    MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => EmployeeProvider()),
         ChangeNotifierProvider(create: (_) => AttendanceProvider()),
         ChangeNotifierProvider(create: (_) => TaskProvider()),
         ChangeNotifierProvider(create: (_) => PettyCashProvider()),
-        ChangeNotifierProvider(create: (_) => EmployeeProvider()),
         ChangeNotifierProvider(create: (_) => SalaryProvider()),
-        ChangeNotifierProvider(create: (_) => SiteProvider()),
       ],
-      child: MaterialApp(
-        title: 'Employee Management System',
-        theme: AppTheme.lightTheme,
-        debugShowCheckedModeBanner: false,
-        home: const AuthWrapper(),
-        routes: AppRoutes.routes,
-        onGenerateRoute: (settings) {
-          // Handle unknown routes
-          return MaterialPageRoute(
-            builder: (context) => const Scaffold(
-              body: Center(
-                child: Text('Page not found'),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
+      child: const MyApp(),
+    ),
+  );
 }
 
 class AuthWrapper extends StatefulWidget {
@@ -81,9 +46,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initializeAuth();
-      
-      // Debug the auth state after initialization
-      authProvider.debugPrintState();
     } catch (e) {
       debugPrint('❌ App initialization error: $e');
     }
@@ -93,80 +55,153 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
-        // Show loading screen while initializing
+        // Show loading screen while initializing - simplified version
         if (!authProvider.isInitialized) {
-          return const Scaffold(
-            backgroundColor: Colors.white,
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text(
-                    'Initializing...',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ],
-              ),
-            ),
+          return const _LoadingScreen();
+        }
+
+        // Show error with retry if initialization failed
+        if (authProvider.error != null) {
+          return _ErrorScreen(
+            error: authProvider.error!,
+            onRetry: _initializeApp,
           );
         }
 
-        // Show error screen if initialization failed
-        if (authProvider.error != null) {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Initialization Error',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      authProvider.error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: () => _initializeApp(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Retry'),
-                    ),
-                  ],
+        // Return to MyApp for routing based on auth state
+        return const MyApp();
+      },
+    );
+  }
+}
+
+// Simplified loading screen
+class _LoadingScreen extends StatelessWidget {
+  const _LoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // App Logo or Icon
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2E7D32),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.business,
+                  color: Colors.white,
+                  size: 40,
                 ),
               ),
-            ),
-          );
-        }
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2E7D32)),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Loading...',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-        // Navigate based on authentication status
-        if (authProvider.isAuthenticated) {
-          debugPrint('✅ User is authenticated, showing MainHomeLayout');
-          return const MainHomeLayout();
-        } else {
-          debugPrint('🔐 User not authenticated, showing LoginScreen');
-          return const LoginScreen();
-        }
-      },
+// Simplified error screen with snackbar integration
+class _ErrorScreen extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+
+  const _ErrorScreen({
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Error Icon
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.error_outline,
+                    color: Colors.red,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Initialization Failed',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  error,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: onRetry,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E7D32),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Retry',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,4 +1,5 @@
-// lib/screens/home/dashboard_screen.dart (Simplified for MainHomeLayout)
+// lib/screens/home/dashboard_screen.dart
+import 'package:ems/utils/snackbar_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -53,18 +54,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Error initializing dashboard: $e');
       if (mounted) {
-        setState(() {
-          _isInitialized = true; // Set to true even on error to show error UI
-        });
+        SnackbarHelper.showError(context,'Failed to load dashboard data: ${e.toString()}');
       }
     }
   }
 
   Future<void> _refreshDashboard() async {
-    if (!mounted) return;
-
     try {
       final employeeProvider = Provider.of<EmployeeProvider>(context, listen: false);
       final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
@@ -77,261 +73,241 @@ class _DashboardScreenState extends State<DashboardScreen> {
         taskProvider.refresh(),
         pettyCashProvider.refresh(),
       ]);
-    } catch (e) {
-      debugPrint('Error refreshing dashboard: $e');
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to refresh: ${e.toString()}')),
-        );
+        SnackbarHelper.showSuccess(context,'Dashboard refreshed successfully');
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackbarHelper.showError (context,'Failed to refresh dashboard: ${e.toString()}');
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isInitialized) {
-      return const LoadingWidget();
-    }
+    return Scaffold(
+      body: Consumer4<EmployeeProvider, AttendanceProvider, TaskProvider, PettyCashProvider>(
+        builder: (context, employeeProvider, attendanceProvider, taskProvider, pettyCashProvider, child) {
+          // Check for any loading states
+          final isAnyLoading = employeeProvider.isLoading ||
+                              attendanceProvider.isLoading ||
+                              taskProvider.isLoading ||
+                              pettyCashProvider.isLoading ||
+                              !_isInitialized;
 
-    return Consumer4<EmployeeProvider, AttendanceProvider, TaskProvider, PettyCashProvider>(
-      builder: (context, employeeProvider, attendanceProvider, taskProvider, pettyCashProvider, child) {
-        // Show loading if any provider is loading
-        final isAnyLoading = employeeProvider.isLoading || 
-                            attendanceProvider.isLoading || 
-                            taskProvider.isLoading || 
-                            pettyCashProvider.isLoading;
-
-        // Check for errors
-        final hasErrors = employeeProvider.error != null ||
-                         attendanceProvider.error != null ||
-                         taskProvider.error != null ||
-                         pettyCashProvider.error != null;
-
-        if (isAnyLoading) {
-          return const LoadingWidget();
-        }
-
-        if (hasErrors) {
-          return _buildErrorWidget([
+          // Show errors via snackbars instead of error widgets
+          _showErrorsIfAny([
             employeeProvider.error,
             attendanceProvider.error,
             taskProvider.error,
             pettyCashProvider.error,
-          ].where((error) => error != null).toList());
-        }
+          ]);
 
-        return RefreshIndicator(
-          onRefresh: _refreshDashboard,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildWelcomeCard(employeeProvider),
-                const SizedBox(height: 16),
-                _buildQuickActions(context, attendanceProvider),
-                const SizedBox(height: 16),
-                _buildStatsGrid(attendanceProvider, taskProvider, pettyCashProvider),
-                const SizedBox(height: 16),
-                _buildTodaySection(attendanceProvider, taskProvider),
-                const SizedBox(height: 16),
-                _buildQuickLinks(context),
-                const SizedBox(height: 80), // Add bottom padding for navigation
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+          if (isAnyLoading) {
+            return const LoadingWidget();
+          }
 
-  Widget _buildErrorWidget(List<String?> errors) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Failed to load dashboard data',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+          return RefreshIndicator(
+            onRefresh: _refreshDashboard,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildWelcomeCard(employeeProvider),
+                  const SizedBox(height: 16),
+                  _buildQuickActions(context, attendanceProvider),
+                  const SizedBox(height: 16),
+                  _buildStatsGrid(attendanceProvider, taskProvider, pettyCashProvider),
+                  const SizedBox(height: 16),
+                  _buildTodaySection(attendanceProvider, taskProvider),
+                  const SizedBox(height: 16),
+                  _buildQuickLinks(context),
+                  const SizedBox(height: 80), // Add bottom padding for navigation
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            if (errors.isNotEmpty)
-              Text(
-                errors.first!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey),
-              ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _refreshDashboard,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
+  // Show errors via snackbars only once
+  Set<String> _shownErrors = <String>{};
+  
+  void _showErrorsIfAny(List<String?> errors) {
+    final validErrors = errors.where((error) => error != null).cast<String>();
+    for (final error in validErrors) {
+      if (!_shownErrors.contains(error)) {
+        _shownErrors.add(error);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            SnackbarHelper.showError(context, error);
+          }
+        });
+      }
+    }
+    
+    // Clear shown errors if no errors present
+    if (validErrors.isEmpty) {
+      _shownErrors.clear();
+    }
+  }
+
   Widget _buildWelcomeCard(EmployeeProvider employeeProvider) {
-    final employee = employeeProvider.employee;
-    if (employee == null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final employee = authProvider.employee;
+    
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.primaryColor,
+            AppTheme.primaryColor.withOpacity(0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryColor.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
               CircleAvatar(
                 radius: 30,
-                backgroundColor: Colors.grey[400],
-                child: const Icon(Icons.person, color: Colors.white, size: 30),
+                backgroundColor: Colors.white.withOpacity(0.2),
+                child: Text(
+                  employee?.name?.substring(0, 1).toUpperCase() ?? 'E',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
               const SizedBox(width: 16),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Welcome!'),
-                    Text('Employee data not available'),
+                    Text(
+                      'Welcome back,',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      employee?.name ?? 'Employee',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                   
                   ],
                 ),
               ),
             ],
           ),
-        ),
-      );
-    }
-
-    return Card(
-      elevation: 4,
-      child: Container(
-        padding: const EdgeInsets.all(16.0),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: LinearGradient(
-            colors: [
-              AppTheme.primaryColor.withOpacity(0.1),
-              AppTheme.primaryColor.withOpacity(0.05),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'Employee ID: ${employee?.employeeCode ?? 'N/A'}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 30,
-              backgroundColor: AppTheme.primaryColor,
-              child: Text(
-                employee.name.isNotEmpty ? employee.name[0].toUpperCase() : 'E',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome back,',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  Text(
-                    employee.name,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    employee.employeeCode,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              children: [
-                Icon(
-                  Icons.business,
-                  color: Colors.grey[600],
-                ),
-                Text(
-                  employee.departmentName ?? 'No Dept',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildQuickActions(BuildContext context, AttendanceProvider attendanceProvider) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Quick Actions',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
           children: [
-            Text(
-              'Quick Actions',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: _buildActionCard(
+                title: 'Check In',
+                icon: Icons.login,
+                color: Colors.green,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.checkIn),
               ),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pushNamed(context, AppRoutes.attendance);
-                    },
-                    icon: const Icon(Icons.access_time),
-                    label: const Text('Attendance'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => Navigator.pushNamed(context, AppRoutes.tasks),
-                    icon: const Icon(Icons.add_task),
-                    label: const Text('Tasks'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionCard(
+                title: 'Check Out',
+                icon: Icons.logout,
+                color: Colors.orange,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.checkOut),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionCard({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -339,140 +315,200 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildStatsGrid(AttendanceProvider attendanceProvider, TaskProvider taskProvider, PettyCashProvider pettyCashProvider) {
-  return GridView.count(
-    crossAxisCount: 2,
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    crossAxisSpacing: 16,
-    mainAxisSpacing: 16,
-    children: [
-      _buildStatCard(
-        'Present Days',
-        '${attendanceProvider.todayAttendance ?? 0}',
-        Icons.calendar_today,
-        Colors.green,
-      ),
-      _buildStatCard(
-        'Active Tasks',
-        '${taskProvider.activeTasks?.length ?? 0}',
-        Icons.task_alt,
-        Colors.blue,
-      ),
-      _buildStatCard(
-        'Pending Requests',
-        '${pettyCashProvider.pendingRequests?.length ?? 0}',
-        Icons.pending,
-        Colors.orange,
-      ),
-      _buildStatCard(
-        'Working Hours',
-        // Fix: Check if list is not empty before accessing first element
-        '${attendanceProvider.attendanceList.isNotEmpty ? attendanceProvider.attendanceList.first : '0.0'}h',
-        Icons.schedule,
-        Colors.purple,
-      ),
-    ],
-  );
-}
-
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildStatsGrid(
+    AttendanceProvider attendanceProvider,
+    TaskProvider taskProvider,
+    PettyCashProvider pettyCashProvider,
+  ) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Today\'s Overview',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 1.5,
           children: [
-            Icon(
-              icon,
-              size: 32,
-              color: color,
+            _buildStatCard(
+              title: 'Pending Tasks',
+              value: '${authProvider.activeTasks}',
+              icon: Icons.task_alt,
+              color: Colors.blue,
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+            _buildStatCard(
+              title: 'Petty Cash',
+              value: '${authProvider.pendingPettyCash}',
+              icon: Icons.account_balance_wallet,
+              color: Colors.purple,
+            ),
+            _buildStatCard(
+              title: 'This Month',
+              value: '${authProvider.monthlyStats?.approvedDays ?? 0}',
+              subtitle: 'Present Days',
+              icon: Icons.calendar_month,
+              color: Colors.green,
+            ),
+            _buildStatCard(
+              title: 'Total Days',
+              value: '${authProvider.monthlyStats?.totalDays ?? 0}',
+              subtitle: 'This Month',
+              icon: Icons.calendar_today,
+              color: Colors.orange,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    String? subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 24),
+              const Spacer(),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
+          ),
+          if (subtitle != null)
             Text(
-              title,
+              subtitle,
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey[600],
               ),
-              textAlign: TextAlign.center,
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildTodaySection(AttendanceProvider attendanceProvider, TaskProvider taskProvider) {
+  Widget _buildTodaySection(
+    AttendanceProvider attendanceProvider,
+    TaskProvider taskProvider,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Today\'s Overview',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+        const Text(
+          'Today\'s Status',
+          style: TextStyle(
+            fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: attendanceProvider.todayAttendance != null ? Colors.green : Colors.grey,
-              child: Icon(
-                attendanceProvider.todayAttendance != null ? Icons.check : Icons.schedule,
-                color: Colors.white,
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-            ),
-            title: const Text('Today\'s Attendance'),
-            subtitle: Text(
-              attendanceProvider.todayAttendance?.checkInTime != null
-                  ? 'Checked in at ${attendanceProvider.todayAttendance!.checkInTime}'
-                  : 'Not checked in yet',
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.attendance),
+            ],
+          ),
+          child: Column(
+            children: [
+              _buildStatusRow(
+                'Check In',
+                attendanceProvider.todayAttendance?.checkInTime != null 
+                    ? attendanceProvider.todayAttendance!.checkInTime!
+                    : 'Not checked in',
+                attendanceProvider.todayAttendance?.checkInTime != null 
+                    ? Colors.green 
+                    : Colors.grey,
+              ),
+              const Divider(),
+              _buildStatusRow(
+                'Check Out',
+                attendanceProvider.todayAttendance?.checkOutTime != null 
+                    ? attendanceProvider.todayAttendance!.checkOutTime!
+                    : 'Not checked out',
+                attendanceProvider.todayAttendance?.checkOutTime != null 
+                    ? Colors.orange 
+                    : Colors.grey,
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        if (taskProvider.tasks.isNotEmpty == true)
-          ...taskProvider.tasks!.take(2).map((task) =>
-            Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: task.status == 'completed' ? Colors.green : Colors.orange,
-                  child: Icon(
-                    task.status == 'completed' ? Icons.check : Icons.pending,
-                    color: Colors.white,
-                  ),
-                ),
-                title: Text(task.title),
-                subtitle: Text('Due: ${task.endTime ?? 'No due date'}'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () => Navigator.pushNamed(context, AppRoutes.tasks),
-              ),
-            ),
-          )
-        else
-          Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.grey[400],
-                child: const Icon(Icons.task, color: Colors.white),
-              ),
-              title: const Text('No Tasks for Today'),
-              subtitle: const Text('Great! You\'re all caught up'),
-              trailing: const Icon(Icons.add),
-              onTap: () => Navigator.pushNamed(context, AppRoutes.tasks),
+      ],
+    );
+  }
+
+  Widget _buildStatusRow(String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
             ),
           ),
-      ],
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -480,29 +516,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'Quick Links',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          style: TextStyle(
+            fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 16),
-        Row(
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 3,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
           children: [
-            Expanded(
-              child: _buildQuickLinkCard(
-                'View Profile',
-                Icons.person,
-                () => Navigator.pushNamed(context, AppRoutes.profile),
-              ),
+            _buildQuickLinkCard(
+              title: 'Attendance',
+              icon: Icons.schedule,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.attendance),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildQuickLinkCard(
-                'Salary Info',
-                Icons.attach_money,
-                () => Navigator.pushNamed(context, AppRoutes.salary),
-              ),
+            _buildQuickLinkCard(
+              title: 'Tasks',
+              icon: Icons.assignment,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.tasks),
+            ),
+            _buildQuickLinkCard(
+              title: 'Petty Cash',
+              icon: Icons.money,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.pettyCash),
+            ),
+            _buildQuickLinkCard(
+              title: 'Salary',
+              icon: Icons.payment,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.salary),
+            ),
+            _buildQuickLinkCard(
+              title: 'Profile',
+              icon: Icons.person,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
             ),
           ],
         ),
@@ -510,32 +562,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildQuickLinkCard(String title, IconData icon, VoidCallback onTap) {
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                size: 32,
-                color: AppTheme.primaryColor,
+  Widget _buildQuickLinkCard({
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: AppTheme.primaryColor, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
-  }
-}
+  }}
