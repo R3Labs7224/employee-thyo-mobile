@@ -68,26 +68,32 @@ class TaskService {
 
   // Complete a task
   Future<ApiResponse<TaskActionResponse>> completeTask({
-    required int taskId,
-    String? completionNotes,
-  }) async {
-    try {
-      final requestData = CompleteTaskRequest(
-        taskId: taskId,
-        completionNotes: completionNotes,
-      );
+  required int taskId,
+  String? completionNotes,
+  double? latitude,
+  double? longitude,
+  String? completionImageBase64,
+}) async {
+  try {
+    final requestData = CompleteTaskRequest(
+      taskId: taskId,
+      completionNotes: completionNotes,
+      latitude: latitude,
+      longitude: longitude,
+      completionImage: completionImageBase64,
+    );
 
-      final response = await _apiService.put<TaskActionResponse>(
-        AppConfig.tasksEndpoint,
-        requestData.toJson(),
-        fromJson: (data) => TaskActionResponse.fromJson(data),
-      );
+    final response = await _apiService.put<TaskActionResponse>(
+      AppConfig.tasksEndpoint,
+      requestData.toJson(),
+      fromJson: (data) => TaskActionResponse.fromJson(data),
+    );
 
-      return response;
-    } catch (e) {
-      return ApiResponse.error('Failed to complete task: ${e.toString()}');
-    }
+    return response;
+  } catch (e) {
+    return ApiResponse.error('Failed to complete task: ${e.toString()}');
   }
+}
 
   // Get active task
   Task? getActiveTask(List<Task> tasks) {

@@ -136,49 +136,54 @@ class TaskProvider with ChangeNotifier {
       _setLoading(false);
     }
   }
-
-  // FIXED: Complete a task with proper loading state management
-  Future<bool> completeTask({
-    required int taskId,
-    String? completionNotes,
-  }) async {
-    // Prevent multiple simultaneous calls
-    if (_isLoading) {
-      debugPrint('🔧 TaskProvider: Already loading, skipping complete');
-      return false;
-    }
-
-    _setLoading(true);
-    _error = null;
-
-    try {
-      debugPrint('🔄 TaskProvider: Completing task: $taskId');
-      
-      final response = await _taskService.completeTask(
-        taskId: taskId,
-        completionNotes: completionNotes,
-      );
-
-      if (response.success) {
-        debugPrint('✅ TaskProvider: Task completed successfully');
-        
-        // FIXED: Fetch fresh data after successful completion
-        await fetchTasks(date: _currentDate);
-        return true;
-      } else {
-        _error = response.message;
-        debugPrint('❌ TaskProvider: Complete task error - $_error');
-        return false;
-      }
-    } catch (e) {
-      _error = 'Failed to complete task: ${e.toString()}';
-      debugPrint('❌ TaskProvider: Complete task exception - $_error');
-      return false;
-    } finally {
-      // FIXED: Always reset loading state
-      _setLoading(false);
-    }
+// Complete a task
+Future<bool> completeTask({
+  required int taskId,
+  String? completionNotes,
+  double? latitude,
+  double? longitude,
+  String? completionImageBase64,
+}) async {
+  // Prevent multiple simultaneous calls
+  if (_isLoading) {
+    debugPrint('🔧 TaskProvider: Already loading, skipping complete');
+    return false;
   }
+
+  _setLoading(true);
+  _error = null;
+
+  try {
+    debugPrint('🔄 TaskProvider: Completing task: $taskId');
+    
+    final response = await _taskService.completeTask(
+      taskId: taskId,
+      completionNotes: completionNotes,
+      latitude: latitude,
+      longitude: longitude,
+      completionImageBase64: completionImageBase64,
+    );
+
+    if (response.success) {
+      debugPrint('✅ TaskProvider: Task completed successfully');
+      
+      // FIXED: Fetch fresh data after successful completion
+      await fetchTasks(date: _currentDate);
+      return true;
+    } else {
+      _error = response.message;
+      debugPrint('❌ TaskProvider: Complete task error - $_error');
+      return false;
+    }
+  } catch (e) {
+    _error = 'Failed to complete task: ${e.toString()}';
+    debugPrint('❌ TaskProvider: Complete task exception - $_error');
+    return false;
+  } finally {
+    // FIXED: Always reset loading state
+    _setLoading(false);
+  }
+}
 
   // Helper methods
   Task? getTaskById(int taskId) {

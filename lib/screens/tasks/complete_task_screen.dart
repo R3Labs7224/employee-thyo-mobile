@@ -136,45 +136,58 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen>
       _showErrorSnackBar('Failed to process image: ${e.toString()}');
     }
   }
-
-  Future<void> _completeTask() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    if (_task == null) {
-      _showErrorSnackBar('No active task found');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-      final completionNotes = _notesController.text.trim();
-
-      final success = await taskProvider.completeTask(
-        taskId: _task!.id!,
-        completionNotes: completionNotes.isNotEmpty ? completionNotes : null,
-      );
-
-      if (success && mounted) {
-        _showSuccessSnackBar('Task completed successfully!');
-        Navigator.pop(context);
-      } else if (mounted) {
-        _showErrorSnackBar(taskProvider.error ?? 'Failed to complete task');
-      }
-    } catch (e) {
-      _showErrorSnackBar('Failed to complete task: ${e.toString()}');
-    }
-
-    setState(() {
-      _isLoading = false;
-    });
+Future<void> _completeTask() async {
+  if (!_formKey.currentState!.validate()) {
+    return;
   }
 
+  if (_task == null) {
+    _showErrorSnackBar('No active task found');
+    return;
+  }
+
+  // Check if location is available
+  if (_currentPosition == null) {
+    // Try to get location one more time
+    final position = await _locationService.getCurrentPosition();
+    if (position != null) {
+      _currentPosition = position;
+    } else {
+      _showErrorSnackBar('Location is required to complete the task. Please ensure GPS is enabled.');
+      return;
+    }
+  }
+
+  setState(() {
+    _isLoading = true;
+  });
+
+  try {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final completionNotes = _notesController.text.trim();
+
+    final success = await taskProvider.completeTask(
+      taskId: _task!.id!,
+      completionNotes: completionNotes.isNotEmpty ? completionNotes : null,
+      latitude: _currentPosition!.latitude,
+      longitude: _currentPosition!.longitude,
+      completionImageBase64: _completionImageBase64,
+    );
+
+    if (success && mounted) {
+      _showSuccessSnackBar('Task completed successfully!');
+      Navigator.pop(context);
+    } else if (mounted) {
+      _showErrorSnackBar(taskProvider.error ?? 'Failed to complete task');
+    }
+  } catch (e) {
+    _showErrorSnackBar('Failed to complete task: ${e.toString()}');
+  }
+
+  setState(() {
+    _isLoading = false;
+  });
+}
   void _showErrorSnackBar(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -189,29 +189,39 @@ class CreateTaskRequest {
   Map<String, dynamic> toJson() {
     return {
       'title': title,
-      'description': description ?? '',
+      'completion_notes': description ?? '',
       'site_id': siteId,
       'latitude': latitude,
       'longitude': longitude,
-      if (taskImage != null) 'task_image': taskImage,
+      if (taskImage != null) 'completion_image': taskImage,
     };
   }
 }
+
 
 // Complete task request model
 class CompleteTaskRequest {
   final int taskId;
   final String? completionNotes;
+  final double? latitude;
+  final double? longitude;
+  final String? completionImage; // base64 encoded image
 
   CompleteTaskRequest({
     required this.taskId,
     this.completionNotes,
+    this.latitude,
+    this.longitude,
+    this.completionImage,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'task_id': taskId,
       if (completionNotes != null) 'completion_notes': completionNotes,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (completionImage != null) 'completion_image': completionImage,
     };
   }
 }
