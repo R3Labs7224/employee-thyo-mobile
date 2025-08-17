@@ -63,7 +63,7 @@ class TaskProvider with ChangeNotifier {
 
       if (response.success && response.data != null) {
         final taskResponse = response.data!;
-        
+        print("Task Response: ${taskResponse.attendanceStatus}");
         _tasks = taskResponse.tasks;
         _summary = taskResponse.summary;
         _canCreateTask = taskResponse.canCreateTask;

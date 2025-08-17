@@ -66,12 +66,12 @@ Future<void> fetchAttendance() async {
   try {
     // Get attendance history for current/selected month
     final response = await _attendanceService.getAttendanceHistory(
-      month: _selectedMonth, // You'll need to add this property
+      month: _selectedMonth,
     );
 
     if (response.success) {
       _attendanceList = response.data ?? [];
-      print("Attendence List: $_attendanceList");
+      print("Attendance List: $_attendanceList");
       
       // Find today's attendance
       final today = DateTime.now().toIso8601String().split('T')[0];
@@ -84,9 +84,23 @@ Future<void> fetchAttendance() async {
       }
       
       _isInitialized = true;
-      _error = null;
+      _error = null; // Clear any previous errors since response was successful
+      
+      // Note: Empty attendance list is NOT an error condition
+      // It's a normal state for new employees or months with no records
+      
     } else {
-      _error = response.message;
+      // Only set error if the API response indicates a failure
+      // Empty data with success=true should not be treated as an error
+      if (response.message.toLowerCase().contains('failed') || 
+          response.message.toLowerCase().contains('error')) {
+        _error = response.message;
+      } else {
+        // API returned success=false but message doesn't indicate failure
+        // This might be a case where no data exists, which is fine
+        _error = null;
+      }
+      
       _attendanceList = [];
       _todayAttendance = null;
     }
@@ -99,7 +113,6 @@ Future<void> fetchAttendance() async {
   _isLoading = false;
   notifyListeners();
 }
-
 
   Future<bool> checkIn({
   required int siteId,

@@ -7,28 +7,34 @@ import 'api_service.dart';
 class AttendanceService {
   final ApiService _apiService = ApiService();
 
-  // Get attendance history for a specific month
-  Future<ApiResponse<List<Attendance>>> getAttendanceHistory({String? month}) async {
-    try {
-      final Map<String, String> queryParams = {};
-      if (month != null) {
-        queryParams['month'] = month;
-      }
-
-      final response = await _apiService.get<List<Attendance>>(
-        AppConfig.attendanceEndpoint,
-        queryParams: queryParams,
-        fromJson: (data) => (data as List)
-            .map((item) => Attendance.fromJson(item))
-            .toList(),
-      );
-      print( "Attendance History Response: ${response.data!.first}");
-      return response;
-    } catch (e) {
-      return ApiResponse.error('Failed to fetch attendance: ${e.toString()}');
+// Get attendance history for a specific month
+Future<ApiResponse<List<Attendance>>> getAttendanceHistory({String? month}) async {
+  try {
+    final Map<String, String> queryParams = {};
+    if (month != null) {
+      queryParams['month'] = month;
     }
-  }
 
+    final response = await _apiService.get<List<Attendance>>(
+      AppConfig.attendanceEndpoint,
+      queryParams: queryParams,
+      fromJson: (data) => (data as List)
+          .map((item) => Attendance.fromJson(item))
+          .toList(),
+    );
+    
+    // Fixed: Check if data is not empty before accessing first element
+    if (response.data != null && response.data!.isNotEmpty) {
+      print("Attendance History Response: ${response.data!.first}");
+    } else {
+      print("Attendance History Response: Empty data array - no attendance records found");
+    }
+    
+    return response;
+  } catch (e) {
+    return ApiResponse.error('Failed to fetch attendance: ${e.toString()}');
+  }
+}
   // Check in
   Future<ApiResponse<AttendanceActionResponse>> checkIn({
     required int siteId,

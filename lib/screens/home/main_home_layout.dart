@@ -60,7 +60,7 @@ class _MainHomeLayoutState extends State<MainHomeLayout> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'EMS Dashboard',
+          'Dashboard',
           style: TextStyle(
             fontWeight: FontWeight.bold,
           ),

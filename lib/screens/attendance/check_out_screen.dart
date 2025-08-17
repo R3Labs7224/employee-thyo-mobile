@@ -61,13 +61,7 @@ class _CheckOutScreenState extends State<CheckOutScreen> {
         return;
       }
 
-      if (todayAttendance.checkOutTime != null) {
-        setState(() {
-          _error = 'You have already checked out today.';
-          _isLoading = false;
-        });
-        return;
-      }
+     
 
       // Set today's attendance info
       _todaySiteId = todayAttendance.siteId;

@@ -287,37 +287,90 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final attendanceList = attendanceProvider.attendanceList;
 
     if (attendanceList.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.calendar_today,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Motivating icon with gradient background
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppTheme.primaryColor.withOpacity(0.2),
+                    AppTheme.primaryColor.withOpacity(0.1),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(60),
+              ),
+              child: Icon(
+                Icons.wb_sunny_outlined,
                 size: 64,
-                color: Colors.grey[400],
+                color: AppTheme.primaryColor,
               ),
-              const SizedBox(height: 16),
-              Text(
-                'No attendance records',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[600],
+            ),
+            const SizedBox(height: 24),
+            
+            // Welcome message
+            Text(
+              '🌟 Welcome to Your Journey!',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primaryColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            
+            // Motivating message
+            Text(
+              'Ready to make today count?\nYour attendance journey starts with a single check-in!',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Colors.grey[600],
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            
+            // Call to action button
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/check-in');
+              },
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Start Your Day'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
                 ),
+                elevation: 2,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Start by checking in to create your first record',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[500],
-                ),
-                textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            
+            // Encouraging subtitle
+            Text(
+              'Every great achievement begins with the decision to try',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey[500],
+                fontStyle: FontStyle.italic,
               ),
-            ],
-          ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-      );
-    }
+      ),
+    );
+  }
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
