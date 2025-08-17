@@ -1,5 +1,5 @@
 class AppConfig {
-  static const String baseUrl = 'http://192.168.1.16/employee_management_system/api/';
+  static const String baseUrl = 'https://maagroup.in/report/api/';
   
   // Endpoints
   static const String loginEndpoint = 'auth/login.php';

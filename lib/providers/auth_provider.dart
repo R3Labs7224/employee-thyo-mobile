@@ -132,7 +132,7 @@ class AuthProvider with ChangeNotifier {
     _permissions = null;
     _pendingPettyCash = 0;
     _activeTasks = 0;
-    _isInitialized = false;
+    _isInitialized = true; // Keep initialized as true to prevent re-initialization
 
     _setLoading(false);
     debugPrint('🔐 AuthProvider: All auth data cleared');
