@@ -1,72 +1,64 @@
-// lib/models/task.dart
-// Helper functions for safe type conversion
-int? _safeIntNullable(dynamic value) {
-  if (value == null) return null;
-  if (value is int) return value;
-  if (value is String) {
-    final parsed = int.tryParse(value);
-    return parsed;
-  }
-  if (value is double) return value.toInt();
-  return null;
-}
-
+// lib/models/task.dart - FIXED VERSION
+// Helper function for safe integer conversion
 int _safeInt(dynamic value) {
   if (value == null) return 0;
   if (value is int) return value;
-  if (value is String) {
-    final parsed = int.tryParse(value);
-    return parsed ?? 0;
-  }
-  if (value is double) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? 0;
   return 0;
 }
 
-double? _safeDouble(dynamic value) {
+// Helper function for safe nullable integer conversion
+int? _safeIntNullable(dynamic value) {
   if (value == null) return null;
-  if (value is double) return value;
-  if (value is int) return value.toDouble();
-  if (value is String) {
-    final parsed = double.tryParse(value);
-    return parsed;
-  }
+  if (value is int) return value;
+  if (value is String) return int.tryParse(value);
   return null;
 }
 
+// Helper function for safe double conversion
+double _safeDouble(dynamic value) {
+  if (value == null) return 0.0;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? 0.0;
+  return 0.0;
+}
+
+// Helper function for safe string conversion
 String _safeString(dynamic value) {
   if (value == null) return '';
   return value.toString();
 }
 
 class Task {
-  final int? id;
-  final int? employeeId;
-  final int? attendanceId;
-  final int? siteId;
+  final int id;
+  final int employeeId;
+  final int attendanceId;
+  final int siteId;
   final String title;
-  final String? description;
+  final String description;
   final String status;
   final String? startTime;
   final String? endTime;
-  final double? latitude;
-  final double? longitude;
+  final double latitude;
+  final double longitude;
   final String? taskImage;
   final String? siteName;
   final String? attendanceDate;
   final String? createdAt;
 
   Task({
-    this.id,
-    this.employeeId,
-    this.attendanceId,
-    this.siteId,
+    required this.id,
+    required this.employeeId,
+    required this.attendanceId,
+    required this.siteId,
     required this.title,
-    this.description,
-    this.status = 'active',
+    required this.description,
+    required this.status,
     this.startTime,
     this.endTime,
-    this.latitude,
-    this.longitude,
+    required this.latitude,
+    required this.longitude,
     this.taskImage,
     this.siteName,
     this.attendanceDate,
@@ -75,13 +67,14 @@ class Task {
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
-      id: _safeIntNullable(json['id']), // Fixed: Use safe conversion
-      employeeId: _safeIntNullable(json['employee_id']), // Fixed
-      attendanceId: _safeIntNullable(json['attendance_id']), // Fixed
-      siteId: _safeIntNullable(json['site_id']), // Fixed
+      id: _safeInt(json['id']),
+      employeeId: _safeInt(json['employee_id']),
+      attendanceId: _safeInt(json['attendance_id']),
+      siteId: _safeInt(json['site_id']),
       title: _safeString(json['title']),
-      description: json['description']?.toString(),
-      status: _safeString(json['status']).isNotEmpty ? _safeString(json['status']) : 'active',
+      description: _safeString(json['description']),
+      status: _safeString(json['status']).isNotEmpty 
+          ? _safeString(json['status']) : 'active',
       startTime: json['start_time']?.toString(),
       endTime: json['end_time']?.toString(),
       latitude: _safeDouble(json['latitude']),
@@ -168,7 +161,7 @@ class TaskSummary {
   }
 }
 
-// Create task request model
+// FIXED: Create task request model - corrected parameter names
 class CreateTaskRequest {
   final String title;
   final String? description;
@@ -189,17 +182,16 @@ class CreateTaskRequest {
   Map<String, dynamic> toJson() {
     return {
       'title': title,
-      'completion_notes': description ?? '',
+      'description': description ?? '', // FIXED: Changed from 'completion_notes' to 'description'
       'site_id': siteId,
       'latitude': latitude,
       'longitude': longitude,
-      if (taskImage != null) 'completion_image': taskImage,
+      if (taskImage != null) 'image': taskImage, // FIXED: Changed from 'completion_image' to 'image'
     };
   }
 }
 
-
-// Complete task request model
+// Complete task request model (this one was correct)
 class CompleteTaskRequest {
   final int taskId;
   final String? completionNotes;
