@@ -97,7 +97,7 @@ class _PettyCashScreenState extends State<PettyCashScreen>
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.pushNamed(context, AppRoutes.pettyCash)
+          Navigator.pushNamed(context, AppRoutes.createRequest)
               .then((result) {
             if (result == true) {
               // Refresh data if request was created successfully
@@ -370,7 +370,7 @@ class _PettyCashScreenState extends State<PettyCashScreen>
   Widget _buildCreateRequestCard() {
     return CustomCard(
       onTap: () {
-        Navigator.pushNamed(context, AppRoutes.pettyCash)
+        Navigator.pushNamed(context, AppRoutes.createRequest)
             .then((result) {
           if (result == true) {
             _loadPettyCash();
