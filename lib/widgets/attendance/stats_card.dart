@@ -1,163 +1,112 @@
-import 'package:flutter/material.dart';
-import '../../models/attendance.dart';
-import '../../config/theme.dart';
-import '../common/custom_card.dart';
+// lib/models/attendance_summary.dart - UPDATED: Removed working hours fields
+class AttendanceSummary {
+  final int totalDays;
+  final int approvedDays;
+  final int pendingDays;
+  final int rejectedDays;
 
-class StatsCard extends StatelessWidget {
-  final AttendanceSummary summary;
+  AttendanceSummary({
+    required this.totalDays,
+    required this.approvedDays,
+    required this.pendingDays,
+    required this.rejectedDays,
+  });
 
-  const StatsCard({
-    Key? key,
-    required this.summary,
-  }) : super(key: key);
+  // Safe conversion helpers
+  static int _safeInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      try {
+        return int.parse(value);
+      } catch (e) {
+        return 0;
+      }
+    }
+    return 0;
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return CustomCard(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Monthly Summary',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatItem(
-                    'Total Days',
-                    summary.totalDays.toString(),
-                    Icons.calendar_today,
-                    AppTheme.primaryColor,
-                  ),
-                ),
-                Expanded(
-                  child: _buildStatItem(
-                    'Approved',
-                    summary.approvedDays.toString(),
-                    Icons.check_circle,
-                    AppTheme.successColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatItem(
-                    'Pending',
-                    summary.pendingDays.toString(),
-                    Icons.pending,
-                    AppTheme.accentColor,
-                  ),
-                ),
-                Expanded(
-                  child: _buildStatItem(
-                    'Rejected',
-                    summary.rejectedDays.toString(),
-                    Icons.cancel,
-                    Colors.red,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Column(
-                    children: [
-                      Text(
-                        '${summary.totalHours.toStringAsFixed(1)}h',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primaryColor,
-                        ),
-                      ),
-                      Text(
-                        'Total Hours',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    width: 1,
-                    height: 30,
-                    color: Colors.grey[300],
-                  ),
-                  Column(
-                    children: [
-                      Text(
-                        '${summary.averageHours.toStringAsFixed(1)}h',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.accentColor,
-                        ),
-                      ),
-                      Text(
-                        'Avg/Day',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+  factory AttendanceSummary.fromJson(Map<String, dynamic> json) {
+    return AttendanceSummary(
+      totalDays: _safeInt(json['total_days']),
+      approvedDays: _safeInt(json['approved_days']),
+      pendingDays: _safeInt(json['pending_days']),
+      rejectedDays: _safeInt(json['rejected_days']),
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+  Map<String, dynamic> toJson() {
+    return {
+      'total_days': totalDays,
+      'approved_days': approvedDays,
+      'pending_days': pendingDays,
+      'rejected_days': rejectedDays,
+    };
+  }
+
+  // Calculate attendance percentage
+  double get attendancePercentage {
+    if (totalDays == 0) return 0.0;
+    return (approvedDays / totalDays) * 100;
+  }
+
+  // Get attendance rate category
+  String get attendanceRating {
+    final percentage = attendancePercentage;
+    if (percentage >= 95) return 'Excellent';
+    if (percentage >= 85) return 'Good';
+    if (percentage >= 70) return 'Average';
+    if (percentage >= 50) return 'Below Average';
+    return 'Poor';
+  }
+
+  // Check if employee has perfect attendance
+  bool get isPerfectAttendance => approvedDays == totalDays && totalDays > 0;
+
+  // Get total attendance (approved + pending)
+  int get totalAttendance => approvedDays + pendingDays;
+
+  // Create empty summary
+  factory AttendanceSummary.empty() {
+    return AttendanceSummary(
+      totalDays: 0,
+      approvedDays: 0,
+      pendingDays: 0,
+      rejectedDays: 0,
+    );
+  }
+
+  // Create summary from attendance list
+  factory AttendanceSummary.fromAttendanceList(List<dynamic> attendanceList) {
+    if (attendanceList.isEmpty) {
+      return AttendanceSummary.empty();
+    }
+
+    int approved = 0;
+    int pending = 0;
+    int rejected = 0;
+
+    for (var attendance in attendanceList) {
+      final status = attendance['status']?.toString().toLowerCase() ?? 'pending';
+      switch (status) {
+        case 'approved':
+          approved++;
+          break;
+        case 'rejected':
+          rejected++;
+          break;
+        default:
+          pending++;
+          break;
+      }
+    }
+
+    return AttendanceSummary(
+      totalDays: attendanceList.length,
+      approvedDays: approved,
+      pendingDays: pending,
+      rejectedDays: rejected,
     );
   }
 }

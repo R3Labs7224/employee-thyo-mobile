@@ -1,56 +1,13 @@
-// lib/models/attendance.dart
-// Helper functions for safe type conversion
-int? _safeIntNullable(dynamic value) {
-  if (value == null) return null;
-  if (value is int) return value;
-  if (value is String) {
-    final parsed = int.tryParse(value);
-    return parsed;
-  }
-  if (value is double) return value.toInt();
-  return null;
-}
-
-int _safeInt(dynamic value) {
-  if (value == null) return 0;
-  if (value is int) return value;
-  if (value is String) {
-    final parsed = int.tryParse(value);
-    return parsed ?? 0;
-  }
-  if (value is double) return value.toInt();
-  return 0;
-}
-
-double? _safeDouble(dynamic value) {
-  if (value == null) return null;
-  if (value is double) return value;
-  if (value is int) return value.toDouble();
-  if (value is String) {
-    final parsed = double.tryParse(value);
-    return parsed;
-  }
-  return null;
-}
-
-String _safeString(dynamic value) {
-  if (value == null) return '';
-  return value.toString();
-}
-
+// lib/models/attendance.dart - UPDATED: Removed time and working hours fields
 class Attendance {
   final int? id;
   final int? employeeId;
   final int? siteId;
-  final String date;
-  final String? checkInTime;
-  final String? checkOutTime;
+  final String? date;
   final double? checkInLatitude;
   final double? checkInLongitude;
   final double? checkOutLatitude;
   final double? checkOutLongitude;
-  final String? checkInSelfie;
-  final double? workingHours;
   final String status;
   final String? siteName;
   final String? createdAt;
@@ -59,37 +16,65 @@ class Attendance {
     this.id,
     this.employeeId,
     this.siteId,
-    required this.date,
-    this.checkInTime,
-    this.checkOutTime,
+    this.date,
     this.checkInLatitude,
     this.checkInLongitude,
     this.checkOutLatitude,
     this.checkOutLongitude,
-    this.checkInSelfie,
-    this.workingHours,
     this.status = 'pending',
     this.siteName,
     this.createdAt,
   });
 
+  // Safe string conversion helper
+  static String? _safeString(dynamic value) {
+    if (value == null) return null;
+    return value.toString();
+  }
+
+  // Safe double conversion helper
+  static double? _safeDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Safe int conversion helper
+  static int? _safeInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      try {
+        return int.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   factory Attendance.fromJson(Map<String, dynamic> json) {
     return Attendance(
-      id: _safeIntNullable(json['id']), // Fixed: Use safe conversion
-      employeeId: _safeIntNullable(json['employee_id']), // Fixed
-      siteId: _safeIntNullable(json['site_id']), // Fixed
+      id: _safeInt(json['id']),
+      employeeId: _safeInt(json['employee_id']),
+      siteId: _safeInt(json['site_id']),
       date: _safeString(json['date']),
-      checkInTime: json['check_in_time']?.toString(),
-      checkOutTime: json['check_out_time']?.toString(),
       checkInLatitude: _safeDouble(json['check_in_latitude']),
       checkInLongitude: _safeDouble(json['check_in_longitude']),
       checkOutLatitude: _safeDouble(json['check_out_latitude']),
       checkOutLongitude: _safeDouble(json['check_out_longitude']),
-      checkInSelfie: json['check_in_selfie']?.toString(),
-      workingHours: _safeDouble(json['working_hours']),
-      status: _safeString(json['status']).isNotEmpty ? _safeString(json['status']) : 'pending',
-      siteName: json['site_name']?.toString(),
-      createdAt: json['created_at']?.toString(),
+      status: _safeString(json['status']) ?? 'pending',
+      siteName: _safeString(json['site_name']),
+      createdAt: _safeString(json['created_at']),
     );
   }
 
@@ -99,41 +84,35 @@ class Attendance {
       'employee_id': employeeId,
       'site_id': siteId,
       'date': date,
-      'check_in_time': checkInTime,
-      'check_out_time': checkOutTime,
       'check_in_latitude': checkInLatitude,
       'check_in_longitude': checkInLongitude,
       'check_out_latitude': checkOutLatitude,
       'check_out_longitude': checkOutLongitude,
-      'check_in_selfie': checkInSelfie,
-      'working_hours': workingHours,
       'status': status,
       'site_name': siteName,
       'created_at': createdAt,
     };
   }
 
-  bool get isCheckedIn => checkInTime != null;
-  bool get isCheckedOut => checkOutTime != null;
+  bool get isCheckedIn => checkInLatitude != null && checkInLongitude != null;
+  bool get isCheckedOut => checkOutLatitude != null && checkOutLongitude != null;
   bool get isApproved => status == 'approved';
   bool get isPending => status == 'pending';
   bool get isRejected => status == 'rejected';
 }
 
-// Check-in/Check-out request model
+// Check-in/Check-out request model - UPDATED: Removed selfie field
 class AttendanceRequest {
   final String action; // 'check_in' or 'check_out'
   final int siteId;
   final double latitude;
   final double longitude;
-  final String? selfie; // base64 encoded image
 
   AttendanceRequest({
     required this.action,
     required this.siteId,
     required this.latitude,
     required this.longitude,
-    this.selfie,
   });
 
   Map<String, dynamic> toJson() {
@@ -142,80 +121,33 @@ class AttendanceRequest {
       'site_id': siteId,
       'latitude': latitude,
       'longitude': longitude,
-      if (selfie != null) 'selfie': selfie,
     };
   }
 }
 
-// Check-in/Check-out response model
+// Check-in/Check-out response model - UPDATED: Removed time fields
 class AttendanceActionResponse {
   final int attendanceId;
   final String date;
-  final String? checkInTime;
-  final String? checkOutTime;
-  final String siteName;
+  final String? checkInTime; // Kept for compatibility but will be null
+  final String? checkOutTime; // Kept for compatibility but will be null
+  final double? workingHours; // Kept for compatibility but will be null
 
   AttendanceActionResponse({
     required this.attendanceId,
     required this.date,
     this.checkInTime,
     this.checkOutTime,
-    required this.siteName,
+    this.workingHours,
   });
 
   factory AttendanceActionResponse.fromJson(Map<String, dynamic> json) {
     return AttendanceActionResponse(
-      attendanceId: _safeInt(json['attendance_id']), // Fixed: Use safe conversion
-      date: _safeString(json['date']),
-      checkInTime: json['check_in_time']?.toString(),
-      checkOutTime: json['check_out_time']?.toString(),
-      siteName: _safeString(json['site_name']),
+      attendanceId: json['attendance_id'] ?? 0,
+      date: json['date'] ?? '',
+      checkInTime: null, // No longer storing times
+      checkOutTime: null, // No longer storing times
+      workingHours: null, // Can't calculate without times
     );
-  }
-}
-
-// Attendance summary model for statistics
-class AttendanceSummary {
-  final int totalDays;
-  final int approvedDays;
-  final int pendingDays;
-  final int rejectedDays;
-  final double totalHours;
-  final double averageHours;
-
-  AttendanceSummary({
-    required this.totalDays,
-    required this.approvedDays,
-    required this.pendingDays,
-    required this.rejectedDays,
-    required this.totalHours,
-    required this.averageHours,
-  });
-
-  factory AttendanceSummary.fromJson(Map<String, dynamic> json) {
-    return AttendanceSummary(
-      totalDays: _safeInt(json['total_days']),
-      approvedDays: _safeInt(json['approved_days']),
-      pendingDays: _safeInt(json['pending_days']),
-      rejectedDays: _safeInt(json['rejected_days']),
-      totalHours: _safeDouble(json['total_hours']) ?? 0.0,
-      averageHours: _safeDouble(json['average_hours']) ?? 0.0,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'total_days': totalDays,
-      'approved_days': approvedDays,
-      'pending_days': pendingDays,
-      'rejected_days': rejectedDays,
-      'total_hours': totalHours,
-      'average_hours': averageHours,
-    };
-  }
-
-  double get attendancePercentage {
-    if (totalDays == 0) return 0.0;
-    return (approvedDays / totalDays) * 100;
   }
 }

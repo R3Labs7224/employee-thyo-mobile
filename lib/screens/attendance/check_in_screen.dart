@@ -158,8 +158,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
       final success = await attendanceProvider.checkIn(
         siteId: _selectedSite!.id,
         latitude: _currentPosition!.latitude,
-        longitude: _currentPosition!.longitude,
-        selfieBase64: _selfieBase64,
+        longitude: _currentPosition!.longitude,       
       );
 
       if (success && mounted) {
